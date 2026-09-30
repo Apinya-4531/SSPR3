@@ -10,25 +10,22 @@
 
 <!--
   ============================================================================
-  ตั้งค่า Firebase ตรงนี้ (จุดเดียวที่ต้องแก้ก่อนใช้งานจริง)
+  ตั้งค่า Firebase — ใส่ config ของโปรเจกต์ "stock-spare-rama3" ให้แล้ว
   ============================================================================
-  1. เข้า https://console.firebase.google.com สร้างโปรเจกต์ (ฟรี)
-  2. เปิดใช้งาน Firestore Database (Build → Firestore Database → Create database
-     → เลือกโหมด "Start in test mode" ไปก่อนได้)
-  3. Project settings (รูปเฟือง) → General → เลื่อนลงกด </> เพื่อสร้าง Web App
-     → คัดลอกค่า firebaseConfig ที่ได้ มาวางแทนค่า YOUR_... ด้านล่างนี้ให้ครบ
-  4. บันทึกไฟล์นี้แล้วอัปโหลดขึ้น repo / เว็บโฮสติ้งได้เลย ไม่ต้องติดตั้งอะไรเพิ่ม
-     ไม่ต้องรันคำสั่ง build ใดๆ — เปิดไฟล์นี้ในเบราว์เซอร์ (ที่ต่ออินเทอร์เน็ต) ก็ใช้งานได้ทันที
+  ถ้าจะย้ายไปใช้ Firebase โปรเจกต์อื่นในอนาคต ให้เอาค่า firebaseConfig ของโปรเจกต์ใหม่
+  (จาก Firebase Console → Project settings → General → Your apps → </>) มาวางแทนค่า
+  ด้านล่างนี้แทน — นอกนั้นไม่ต้องแก้อะไร ไม่ต้อง build, เปิดไฟล์นี้ผ่านเว็บ (http/https) ได้เลย
   ทุกคนที่เปิดไฟล์นี้ (ไม่ว่าจะโฮสต์ไว้ที่ไหน) จะเห็นข้อมูลชุดเดียวกันแบบเรียลไทม์ผ่าน Firestore
 -->
 <script>
   window.__FIREBASE_CONFIG__ = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID",
+    apiKey: "AIzaSyAPuuofhRGAVykybNBU0r1qcVc_MMNVIOw",
+    authDomain: "stock-spare-rama3.firebaseapp.com",
+    projectId: "stock-spare-rama3",
+    storageBucket: "stock-spare-rama3.firebasestorage.app",
+    messagingSenderId: "274682842038",
+    appId: "1:274682842038:web:3f57f14bdd336e6042cf17",
+    measurementId: "G-0QDTFMMN6R",
   };
 </script>
 
@@ -45,8 +42,12 @@ import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
 import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Warehouse, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, RotateCcw, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
-import { initializeApp } from "https://esm.sh/firebase@10.12.2/app";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://esm.sh/firebase@10.12.2/firestore";
+// Firebase itself is loaded from Google's own official CDN build (not esm.sh) —
+// this is the one library where that matters: app + firestore MUST come from
+// the exact same build so they share one internal registry, or getFirestore()
+// throws "Service firestore is not available".
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // Firebase config is set in the small <script> block near the top of this
 // HTML file (window.__FIREBASE_CONFIG__) — edit it there, not here, so it
 // stays easy to find.
