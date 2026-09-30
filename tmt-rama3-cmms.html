@@ -1,0 +1,2237 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ระบบซ่อมบำรุง และ คลังพัสดุ - TMT RAMA3</title>
+</head>
+<body>
+<div id="root"></div>
+
+<!--
+  ============================================================================
+  ตั้งค่า Firebase ตรงนี้ (จุดเดียวที่ต้องแก้ก่อนใช้งานจริง)
+  ============================================================================
+  1. เข้า https://console.firebase.google.com สร้างโปรเจกต์ (ฟรี)
+  2. เปิดใช้งาน Firestore Database (Build → Firestore Database → Create database
+     → เลือกโหมด "Start in test mode" ไปก่อนได้)
+  3. Project settings (รูปเฟือง) → General → เลื่อนลงกด </> เพื่อสร้าง Web App
+     → คัดลอกค่า firebaseConfig ที่ได้ มาวางแทนค่า YOUR_... ด้านล่างนี้ให้ครบ
+  4. บันทึกไฟล์นี้แล้วอัปโหลดขึ้น repo / เว็บโฮสติ้งได้เลย ไม่ต้องติดตั้งอะไรเพิ่ม
+     ไม่ต้องรันคำสั่ง build ใดๆ — เปิดไฟล์นี้ในเบราว์เซอร์ (ที่ต่ออินเทอร์เน็ต) ก็ใช้งานได้ทันที
+  ทุกคนที่เปิดไฟล์นี้ (ไม่ว่าจะโฮสต์ไว้ที่ไหน) จะเห็นข้อมูลชุดเดียวกันแบบเรียลไทม์ผ่าน Firestore
+-->
+<script>
+  window.__FIREBASE_CONFIG__ = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID",
+  };
+</script>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// This build loads every library straight from the esm.sh CDN at runtime, so
+// this one HTML file needs no npm install / build step — the browser that
+// opens it fetches React, the icons, the charts, Excel export and Firebase
+// on its own. It only needs a normal internet connection when someone opens
+// the page (same as any regular website).
+// ---------------------------------------------------------------------------
+import React, { useState, useEffect, useMemo, useRef } from "https://esm.sh/react@18.3.1";
+import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
+import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Warehouse, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, RotateCcw, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
+import { initializeApp } from "https://esm.sh/firebase@10.12.2/app";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://esm.sh/firebase@10.12.2/firestore";
+// Firebase config is set in the small <script> block near the top of this
+// HTML file (window.__FIREBASE_CONFIG__) — edit it there, not here, so it
+// stays easy to find.
+const firebaseApp = initializeApp(window.__FIREBASE_CONFIG__);
+const db = getFirestore(firebaseApp);
+/* ------------------------------------------------------------------------ */
+/* constants                                                                 */
+/* ------------------------------------------------------------------------ */
+const ASSET_TYPES = ["เครนเหนือศีรษะ", "เครื่องตัดเหล็ก", "รถยก", "เครื่องจักรผลิต", "อื่นๆ"];
+const PART_CATEGORIES = ["อะไหล่เครื่องตัด", "อะไหล่ซ่อมบำรุง", "อะไหล่ซ่อมเครน", "อะไหล่บำรุงรักษา", "อะไหล่อุปกรณ์สื่อสาร", "อุปกรณ์ทำสวน", "อุปกรณ์ซ่อมบำรุง", "อุปกรณ์ไฟฟ้า", "อุปกรณ์ยกเหล็ก", "อุปกรณ์ทำความสะอาด", "อุปกรณ์Safety", "เครื่องมือวัด", "ซ่อมบำรุงรถ", "เอกสารออฟฟิศ", "วัสดุสิ้นเปลือง"];
+const UNIT_OPTIONS = ["ชิ้น", "ชุด", "ตัว", "กล่อง", "เครื่อง", "เมตร", "ลิตร", "ม้วน", "ถุง", "อัน", "ด้าม", "เส้น", "ห่อ", "มัด", "กระป๋อง", "ใบ"];
+const LOCATION_OPTIONS = ["Store", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10", "L11", "L12", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "Office", "Billing", "Production", "ส่วนกลาง"];
+const USAGE_TYPES = ["เบิกพัสดุ - ใช้งานทั่วไป/สิ้นเปลือง", "เบิกเพื่อซ่อมบำรุงอุปกรณ์", "เบิกเพื่องาน/โครงการเฉพาะกิจ"];
+const DEPARTMENT_OPTIONS = ["A1", "A2", "B3", "B4", "Office", "แม่บ้าน", "พนักงานขับรถ", "เครื่องตัด", "รปภ.", "Maintenance"];
+const ASSET_STATUS = { NORMAL: "ใช้งานปกติ", MAINT: "กำลังซ่อมบำรุง", DOWN: "ชำรุด/หยุดใช้งาน" };
+const WO_STATUS = { OPEN: "รอดำเนินการ", INPROGRESS: "กำลังดำเนินการ", DONE: "เสร็จสิ้น", CANCELLED: "ยกเลิก" };
+const WO_TYPE = { PM: "ตามแผน PM", BREAKDOWN: "ซ่อมฉุกเฉิน", CORRECTIVE: "ซ่อมทั่วไป" };
+const PRIORITY = { LOW: "ต่ำ", MED: "ปานกลาง", HIGH: "สูง", CRIT: "วิกฤต" };
+const ROLES = { ADMIN: "ผู้ดูแลระบบ", MAINTENANCE: "ฝ่ายซ่อมบำรุง", STORE: "เจ้าหน้าที่คลัง" };
+// Which pages each role may open. This is the single source of truth for access:
+// the sidebar is built from it and the page render is guarded by it.
+const ROLE_PAGES = {
+    ADMIN: ["dashboard", "assets", "pm", "workorders", "parts", "users"],
+    MAINTENANCE: ["pm", "workorders"],
+    STORE: ["assets", "parts"],
+};
+// Simple shared access code per role (this is a client-side prototype convenience gate,
+// not real authentication — anyone with the page source can read it).
+const ROLE_PASSCODES = { ADMIN: "tmtrama3", MAINTENANCE: "tmt01", STORE: "tmt02" };
+const canAccess = (role, page) => (ROLE_PAGES[role] || []).includes(page);
+const NAV_ITEMS = [
+    { key: "dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
+    { key: "assets", label: "ทะเบียนอุปกรณ์", icon: Factory },
+    { key: "pm", label: "แผนซ่อมบำรุง (PM)", icon: CalendarClock },
+    { key: "workorders", label: "ใบสั่งซ่อม", icon: Wrench },
+    { key: "parts", label: "คลังพัสดุ", icon: Package },
+    { key: "users", label: "ผู้ใช้งาน", icon: UsersIcon },
+];
+const TXN_TYPE = { RECEIVE: "รับเข้า", ISSUE: "เบิกออก" };
+const toneMap = {
+    asset: { NORMAL: "good", MAINT: "warn", DOWN: "bad" },
+    wo: { OPEN: "neutral", INPROGRESS: "warn", DONE: "good", CANCELLED: "neutral" },
+    pm: { ok: "good", soon: "warn", overdue: "bad" },
+    part: { ok: "good", low: "warn", out: "bad" },
+    priority: { LOW: "neutral", MED: "neutral", HIGH: "warn", CRIT: "bad" },
+};
+/* ------------------------------------------------------------------------ */
+/* utils                                                                     */
+/* ------------------------------------------------------------------------ */
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (dateStr, days) => {
+    const d = dateStr ? new Date(dateStr) : new Date();
+    d.setDate(d.getDate() + Number(days || 0));
+    return d.toISOString().slice(0, 10);
+};
+const daysUntil = (dateStr) => {
+    if (!dateStr)
+        return 999;
+    const a = new Date(today());
+    const b = new Date(dateStr);
+    return Math.round((b - a) / 86400000);
+};
+const formatDate = (dateStr) => {
+    if (!dateStr)
+        return "-";
+    try {
+        return new Date(dateStr).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
+    }
+    catch (e) {
+        return dateStr;
+    }
+};
+// Compact date for printed documents — e.g. "12 พ.ย. 69" instead of "12 พ.ย. 2569"
+const formatDatePrint = (dateStr) => {
+    if (!dateStr)
+        return "-";
+    try {
+        return new Date(dateStr).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit" });
+    }
+    catch (e) {
+        return dateStr;
+    }
+};
+const formatDateTime = (d) => {
+    if (!d)
+        return "-";
+    try {
+        const datePart = d.toLocaleDateString("th-TH", { day: "numeric", month: "numeric", year: "2-digit" });
+        const timePart = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        return `${datePart} ${timePart}`;
+    }
+    catch (e) {
+        return "-";
+    }
+};
+const genId = (prefix, list) => {
+    const existing = new Set(list.map((x) => x.id));
+    let n = list.length + 1;
+    let id = `${prefix}-${String(n).padStart(4, "0")}`;
+    while (existing.has(id)) {
+        n += 1;
+        id = `${prefix}-${String(n).padStart(4, "0")}`;
+    }
+    return id;
+};
+function pmStatusOf(pm) {
+    const d = daysUntil(pm.nextDue);
+    if (d < 0)
+        return "overdue";
+    if (d <= 7)
+        return "soon";
+    return "ok";
+}
+function partStatusOf(part) {
+    if (Number(part.quantity) <= 0)
+        return "out";
+    if (Number(part.quantity) <= Number(part.minStock))
+        return "low";
+    return "ok";
+}
+// An asset's status is never stored/edited by hand — it's always derived live from
+// its own work orders, so the two can never drift out of sync.
+//   - Any open or in-progress BREAKDOWN work order  -> DOWN (unusable)
+//   - Any IN-PROGRESS PM/CORRECTIVE work order       -> MAINT (being worked on)
+//   - Only OPEN (not yet started) PM/CORRECTIVE, or no open work orders -> NORMAL
+function deriveAssetStatus(assetId, workOrders) {
+    const relevant = workOrders.filter((w) => w.assetId === assetId && (w.status === "OPEN" || w.status === "INPROGRESS"));
+    if (relevant.length === 0)
+        return "NORMAL";
+    if (relevant.some((w) => w.type === "BREAKDOWN"))
+        return "DOWN";
+    if (relevant.some((w) => w.status === "INPROGRESS"))
+        return "MAINT";
+    return "NORMAL";
+}
+/* ------------------------------------------------------------------------ */
+/* seed data                                                                  */
+/* ------------------------------------------------------------------------ */
+function seedUsers() {
+    return [
+        { id: "USR-0001", name: "สมชาย ศักดิ์เจริญ", role: "ADMIN", department: "วิศวกรรม/ซ่อมบำรุง" },
+        { id: "USR-0002", name: "ประยุทธ ช่างเหล็ก", role: "MAINTENANCE", department: "ซ่อมบำรุง" },
+        { id: "USR-0003", name: "กิตติ แข็งแรง", role: "MAINTENANCE", department: "ซ่อมบำรุง" },
+        { id: "USR-0004", name: "วิภา ทองแท้", role: "STORE", department: "คลังสินค้า" },
+    ];
+}
+function seedAssets() {
+    return [
+        { id: "AST-0001", name: "เครนเหนือศีรษะ 10 ตัน โรงหลอม A", type: "เครนเหนือศีรษะ", location: "โรงหลอม A", department: "ฝ่ายผลิต", serialNumber: "OHC-2019-014", installDate: "2019-03-12" },
+        { id: "AST-0002", name: "เครนเหนือศีรษะ 5 ตัน คลังสินค้า B", type: "เครนเหนือศีรษะ", location: "คลังสินค้า B", department: "คลังสินค้า", serialNumber: "OHC-2020-027", installDate: "2020-07-01" },
+        { id: "AST-0003", name: "เครื่องตัดเลเซอร์ CNC ไลน์ 1", type: "เครื่องตัดเหล็ก", location: "ไลน์ผลิต 1", department: "ฝ่ายผลิต", serialNumber: "LC-2021-003", installDate: "2021-05-20" },
+        { id: "AST-0004", name: "เครื่องตัดพลาสม่า ไลน์ 2", type: "เครื่องตัดเหล็ก", location: "ไลน์ผลิต 2", department: "ฝ่ายผลิต", serialNumber: "PC-2018-011", installDate: "2018-11-09" },
+        { id: "AST-0005", name: "เครื่องเฉือนเหล็กแผ่น (Shearing) ไลน์ 1", type: "เครื่องตัดเหล็ก", location: "ไลน์ผลิต 1", department: "ฝ่ายผลิต", serialNumber: "SH-2017-002", installDate: "2017-02-14" },
+        { id: "AST-0006", name: "รถยกโฟล์คลิฟท์ 3 ตัน คลัง A", type: "รถยก", location: "คลังสินค้า A", department: "คลังสินค้า", serialNumber: "FL-2022-019", installDate: "2022-01-30" },
+        { id: "AST-0007", name: "เครนขาสูง (Gantry Crane) ลานเหล็กแท่ง", type: "เครนเหนือศีรษะ", location: "ลานเก็บเหล็กแท่ง", department: "คลังสินค้า", serialNumber: "GC-2016-005", installDate: "2016-09-18" },
+        { id: "AST-0008", name: "เครื่องอัดม้วนเหล็ก (Coil Handling)", type: "เครื่องจักรผลิต", location: "ไลน์ผลิต 3", department: "ฝ่ายผลิต", serialNumber: "CH-2019-008", installDate: "2019-12-05" },
+    ];
+}
+function seedPmSchedules() {
+    return [
+        { id: "PM-0001", assetId: "AST-0001", taskName: "ตรวจเช็คสลิงและตะขอเครน", frequencyDays: 30, lastDone: addDays(today(), -40), nextDue: addDays(today(), -10), assignedTo: "ประยุทธ ช่างเหล็ก" },
+        { id: "PM-0002", assetId: "AST-0001", taskName: "เปลี่ยนถ่ายน้ำมันเกียร์เครน", frequencyDays: 180, lastDone: addDays(today(), -90), nextDue: addDays(today(), 90), assignedTo: "กิตติ แข็งแรง" },
+        { id: "PM-0003", assetId: "AST-0003", taskName: "ทำความสะอาดเลนส์และปรับโฟกัสหัวตัด", frequencyDays: 14, lastDone: addDays(today(), -12), nextDue: addDays(today(), 2), assignedTo: "ประยุทธ ช่างเหล็ก" },
+        { id: "PM-0004", assetId: "AST-0004", taskName: "ตรวจเช็คระบบไฟฟ้าและหัวพ่นพลาสม่า", frequencyDays: 30, lastDone: addDays(today(), -45), nextDue: addDays(today(), -15), assignedTo: "กิตติ แข็งแรง" },
+        { id: "PM-0005", assetId: "AST-0006", taskName: "ตรวจเช็คระบบเบรกและยาง", frequencyDays: 30, lastDone: addDays(today(), -5), nextDue: addDays(today(), 25), assignedTo: "ประยุทธ ช่างเหล็ก" },
+        { id: "PM-0006", assetId: "AST-0007", taskName: "ตรวจเช็คระบบไฟฟ้าและมอเตอร์ยก", frequencyDays: 60, lastDone: addDays(today(), -55), nextDue: addDays(today(), 5), assignedTo: "กิตติ แข็งแรง" },
+        { id: "PM-0007", assetId: "AST-0005", taskName: "ตรวจสอบใบมีดเฉือนและระบบไฮดรอลิก", frequencyDays: 45, lastDone: addDays(today(), -20), nextDue: addDays(today(), 25), assignedTo: "ประยุทธ ช่างเหล็ก" },
+    ];
+}
+function seedWorkOrders() {
+    return [
+        { id: "WO-0001", assetId: "AST-0004", type: "BREAKDOWN", title: "หัวพ่นพลาสม่าไม่ติด ตัดเหล็กไม่ขาด", description: "ผู้ใช้งานแจ้งว่าหัวตัดพลาสม่าจุดไฟไม่ติดตั้งแต่ช่วงเช้า คาดว่าระบบจ่ายแก๊สมีปัญหา", reportedBy: "วิภา ทองแท้", assignedTo: "กิตติ แข็งแรง", priority: "CRIT", status: "INPROGRESS", createdDate: addDays(today(), -2), completedDate: null, partsUsed: [], comments: [{ author: "กิตติ แข็งแรง", date: addDays(today(), -1), text: "ตรวจพบวาล์วแก๊สรั่ว รออะไหล่เข้า" }] },
+        { id: "WO-0002", assetId: "AST-0002", type: "PM", title: "บำรุงรักษาตามแผน - เครนคลัง B", description: "ดำเนินการตามแผน PM ประจำเดือน", reportedBy: "ประยุทธ ช่างเหล็ก", assignedTo: "ประยุทธ ช่างเหล็ก", priority: "MED", status: "DONE", createdDate: addDays(today(), -15), completedDate: addDays(today(), -14), partsUsed: [], comments: [] },
+        { id: "WO-0003", assetId: "AST-0003", type: "CORRECTIVE", title: "เสียงดังผิดปกติจากมอเตอร์แกน X", description: "พบเสียงดังผิดปกติขณะตัดชิ้นงานที่ความเร็วสูง", reportedBy: "สมชาย ศักดิ์เจริญ", assignedTo: "กิตติ แข็งแรง", priority: "HIGH", status: "OPEN", createdDate: addDays(today(), -1), completedDate: null, partsUsed: [], comments: [] },
+        { id: "WO-0004", assetId: "AST-0002", type: "CORRECTIVE", title: "ตรวจซ่อมมอเตอร์ยกเครนมีเสียงผิดปกติ", description: "กำลังตรวจเช็คและซ่อมมอเตอร์ยกของเครนคลัง B ตามที่ช่างพบความผิดปกติระหว่างตรวจ PM", reportedBy: "ประยุทธ ช่างเหล็ก", assignedTo: "ประยุทธ ช่างเหล็ก", priority: "MED", status: "INPROGRESS", createdDate: addDays(today(), -3), completedDate: null, partsUsed: [], comments: [] },
+    ];
+}
+function seedSpareParts() {
+    return [
+        { id: "SP-0001", name: "สลิงเหล็ก 10 ตัน", code: "WR-10T", category: "อะไหล่ซ่อมเครน", quantity: 4, minStock: 2, unit: "เส้น", location: "L1", unitPrice: 1850 },
+        { id: "SP-0002", name: "หัวพ่นพลาสม่า (Plasma Torch Tip)", code: "PTT-45A", category: "อะไหล่เครื่องตัด", quantity: 1, minStock: 3, unit: "ชิ้น", location: "L2", unitPrice: 650 },
+        { id: "SP-0003", name: "น้ำมันไฮดรอลิก เกรด 46", code: "HYD-46", category: "อะไหล่บำรุงรักษา", quantity: 60, minStock: 20, unit: "ลิตร", location: "R1", unitPrice: 85 },
+        { id: "SP-0004", name: "ใบมีดเฉือนเหล็กแผ่น", code: "SB-450", category: "อะไหล่เครื่องตัด", quantity: 2, minStock: 2, unit: "ชุด", location: "L3", unitPrice: 3500 },
+        { id: "SP-0005", name: "วาล์วควบคุมแก๊ส", code: "GV-220", category: "อะไหล่เครื่องตัด", quantity: 0, minStock: 2, unit: "ชิ้น", location: "L4", unitPrice: 1200 },
+        { id: "SP-0006", name: "ยางล้อรถยก", code: "FL-TIRE-3T", category: "ซ่อมบำรุงรถ", quantity: 6, minStock: 4, unit: "เส้น", location: "R5", unitPrice: 2400 },
+        { id: "SP-0007", name: "ถุงมือกันบาดหนัง", code: "GLV-CUT5", category: "อุปกรณ์Safety", quantity: 25, minStock: 10, unit: "อัน", location: "R8", unitPrice: 45 },
+        { id: "SP-0008", name: "กระดาษ A4", code: "PPR-A4", category: "เอกสารออฟฟิศ", quantity: 8, minStock: 5, unit: "ห่อ", location: "Office", unitPrice: 120 },
+    ];
+}
+function seedStockTxns() {
+    return [
+        { id: "RCV-0001", type: "RECEIVE", itemId: "SP-0003", itemName: "น้ำมันไฮดรอลิก เกรด 46", qty: 40, unit: "ลิตร", unitPrice: 85, date: addDays(today(), -20), reference: "ใบส่งของเลขที่ DN-5521", person: "บริษัท สยามหล่อลื่น จำกัด", receivedBy: "ประยุทธ ช่างเหล็ก", note: "" },
+        { id: "ISS-0001", type: "ISSUE", itemId: "SP-0001", itemName: "สลิงเหล็ก 10 ตัน", qty: 1, unit: "เส้น", unitPrice: 1850, date: addDays(today(), -5), reference: "WO-0002", person: "ประยุทธ ช่างเหล็ก", department: "ซ่อมบำรุง", usageType: USAGE_TYPES[1], usageLocation: "คลังสินค้า B", recordedBy: "ประยุทธ ช่างเหล็ก", note: "เปลี่ยนสลิงเครนคลัง B ตามแผน PM" },
+    ];
+}
+/* ------------------------------------------------------------------------ */
+/* storage helpers — Firestore, real-time, shared by everyone                */
+/* ------------------------------------------------------------------------ */
+// Each "collection" (users, assets, work orders, ...) lives as ONE Firestore
+// document at cmms/<key>, holding { items: [...] }. onSnapshot keeps every
+// open browser in sync in real time: when one person saves, everyone else's
+// screen updates automatically, no refresh needed.
+function useFirestoreCollection(key, seedFn) {
+    const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const seededRef = useRef(false);
+    useEffect(() => {
+        seededRef.current = false;
+        setLoading(true);
+        const ref = doc(db, "cmms", key);
+        const unsub = onSnapshot(ref, async (snap) => {
+            if (snap.exists()) {
+                setData(snap.data().items || []);
+                setLoading(false);
+            }
+            else if (!seededRef.current) {
+                // First time this Firebase project is used — plant the demo data once.
+                seededRef.current = true;
+                const seed = seedFn();
+                try {
+                    await setDoc(ref, { items: seed });
+                }
+                catch (e) {
+                    console.error(`ไม่สามารถสร้างข้อมูลเริ่มต้นสำหรับ "${key}":`, e);
+                    setData(seed);
+                    setLoading(false);
+                }
+            }
+        }, (err) => {
+            console.error(`ไม่สามารถซิงก์ข้อมูล "${key}" กับ Firestore:`, err);
+            setLoading(false);
+        });
+        return () => unsub();
+    }, [key]);
+    const update = (next) => {
+        setData(next);
+        setDoc(doc(db, "cmms", key), { items: next }).catch((e) => {
+            console.error(`บันทึกข้อมูล "${key}" ไปยัง Firestore ไม่สำเร็จ:`, e);
+        });
+    };
+    return [data, update, loading];
+}
+/* ------------------------------------------------------------------------ */
+/* styling                                                                    */
+/* ------------------------------------------------------------------------ */
+const STYLE = `
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-void: #14171A;
+  --bg-panel: #1E2226;
+  --bg-panel-raised: #262B30;
+  --bg-input: #191D21;
+  --border-steel: #30363C;
+  --border-steel-light: #454C54;
+  --text-primary: #ECE9E2;
+  --text-secondary: #9198A0;
+  --text-tertiary: #5B6169;
+  --accent-amber: #F5A623;
+  --accent-amber-soft: rgba(245,166,35,0.14);
+  --status-good: #4CAF6D;
+  --status-good-bg: rgba(76,175,109,0.14);
+  --status-warn: #F0B429;
+  --status-warn-bg: rgba(240,180,41,0.14);
+  --status-bad: #E5555A;
+  --status-bad-bg: rgba(229,85,90,0.14);
+  --status-neutral: #9198A0;
+  --status-neutral-bg: rgba(145,152,160,0.14);
+}
+.cmms-root[data-theme="light"] {
+  --bg-void: #F2F0EA;
+  --bg-panel: #FFFFFF;
+  --bg-panel-raised: #F5F2EA;
+  --bg-input: #FBFAF6;
+  --border-steel: #E2DCCC;
+  --border-steel-light: #CBC2AC;
+  --text-primary: #23262B;
+  --text-secondary: #5B6169;
+  --text-tertiary: #868C90;
+  --accent-amber: #E08A00;
+  --accent-amber-soft: rgba(224,138,0,0.12);
+  --status-good: #2F9E58;
+  --status-good-bg: rgba(47,158,88,0.12);
+  --status-warn: #B8790A;
+  --status-warn-bg: rgba(184,121,10,0.12);
+  --status-bad: #D93A40;
+  --status-bad-bg: rgba(217,58,64,0.12);
+  --status-neutral: #6B7178;
+  --status-neutral-bg: rgba(107,113,120,0.12);
+}
+.cmms-root[data-theme="light"] .login-shell { background: radial-gradient(circle at 50% 15%, #ffffff 0%, var(--bg-void) 60%); }
+.cmms-root {
+  font-family: 'IBM Plex Sans Thai', sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-void);
+  min-height: 100vh;
+  width: 100%;
+}
+.cmms-root, .cmms-root * { box-sizing: border-box; }
+.cmms-root h1, .cmms-root h2, .cmms-root h3 { font-family: 'Chakra Petch', sans-serif; letter-spacing: 0.01em; margin: 0; }
+.cmms-root .mono { font-family: 'JetBrains Mono', monospace; }
+
+.cmms-root button:focus-visible,
+.cmms-root input:focus-visible,
+.cmms-root select:focus-visible,
+.cmms-root textarea:focus-visible { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
+
+.app-shell { display: flex; min-height: 100vh; }
+.sidebar { width: 236px; flex-shrink: 0; background: var(--bg-panel); border-right: 1px solid var(--border-steel); display: flex; flex-direction: column; padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
+.brand-mark { width: 34px; height: 34px; border-radius: 6px; background: var(--accent-amber); display: flex; align-items: center; justify-content: center; color: #1A1300; flex-shrink: 0; }
+.brand-text .t1 { font-family: 'Chakra Petch', sans-serif; font-size: 15px; font-weight: 700; line-height: 1.15; }
+.brand-text .t2 { font-size: 11px; color: var(--text-tertiary); }
+.nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 6px; color: var(--text-secondary); font-size: 14px; cursor: pointer; border: none; border-left: 3px solid transparent; background: transparent; width: 100%; text-align: left; font-family: inherit; }
+.nav-item:hover { background: var(--bg-panel-raised); color: var(--text-primary); }
+.nav-item.active { background: var(--bg-panel-raised); color: var(--accent-amber); border-left: 3px solid var(--accent-amber); font-weight: 600; }
+.sidebar-foot { border-top: 1px solid var(--border-steel); padding-top: 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--border-steel); gap: 16px; flex-wrap: wrap; }
+.page-title { font-size: 22px; font-weight: 700; }
+.page-sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+.user-chip { display: flex; align-items: center; gap: 10px; background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 6px 12px 6px 6px; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-amber-soft); color: var(--accent-amber); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; font-family: 'Chakra Petch', sans-serif; flex-shrink: 0; }
+.user-chip .name { font-size: 13px; font-weight: 600; line-height: 1.3; }
+.user-chip .role { font-size: 11px; color: var(--text-tertiary); }
+.content { padding: 22px 28px 60px; flex: 1; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Sans Thai', sans-serif; font-size: 13.5px; font-weight: 600; padding: 9px 14px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
+.btn-primary { background: var(--accent-amber); color: #1A1300; }
+.btn-primary:hover { background: #FFB53D; }
+.btn-outline { background: transparent; border: 1px solid var(--border-steel-light); color: var(--text-primary); }
+.btn-outline:hover { background: var(--bg-panel-raised); }
+.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid transparent; }
+.btn-ghost:hover { color: var(--text-primary); background: var(--bg-panel-raised); }
+.btn-danger { background: transparent; border: 1px solid var(--status-bad); color: var(--status-bad); }
+.btn-danger:hover { background: var(--status-bad-bg); }
+.btn-sm { padding: 6px 10px; font-size: 12.5px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 5px; background: transparent; border: 1px solid var(--border-steel); color: var(--text-secondary); cursor: pointer; }
+.icon-btn:hover { color: var(--text-primary); background: var(--bg-panel-raised); }
+
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.kpi-card { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 16px 18px; border-left: 3px solid var(--kpi-color, var(--accent-amber)); }
+.kpi-value { font-size: 30px; font-weight: 600; line-height: 1; color: var(--text-primary); }
+.kpi-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 8px; }
+
+.panel { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 18px; }
+.panel-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.table-wrap { overflow-x: auto; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.data-table th { text-align: left; color: var(--text-tertiary); font-weight: 600; font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border-steel); white-space: nowrap; }
+.data-table td { padding: 11px 12px; border-bottom: 1px solid var(--border-steel); vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--bg-panel-raised); }
+.row-clickable { cursor: pointer; }
+.cell-primary { font-weight: 600; color: var(--text-primary); }
+.cell-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.badge-good { background: var(--status-good-bg); color: var(--status-good); }
+.badge-warn { background: var(--status-warn-bg); color: var(--status-warn); }
+.badge-bad { background: var(--status-bad-bg); color: var(--status-bad); }
+.badge-neutral { background: var(--status-neutral-bg); color: var(--status-neutral); }
+
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.search-box { display: flex; align-items: center; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 8px 10px; flex: 1; min-width: 180px; max-width: 320px; }
+.search-box input { background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13.5px; width: 100%; font-family: inherit; }
+.search-box svg { color: var(--text-tertiary); flex-shrink: 0; }
+.select-filter { background: var(--bg-input); border: 1px solid var(--border-steel); color: var(--text-primary); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+.spacer { flex: 1; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-wide { grid-column: 1 / -1; }
+.field label { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
+.field .req { color: var(--status-bad); margin-left: 3px; }
+.field input, .field select, .field textarea { background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; color: var(--text-primary); font-size: 13.5px; font-family: inherit; outline: none; }
+.cmms-root select option { background: var(--bg-panel-raised); color: var(--text-primary); }
+
+.search-select { position: relative; }
+.search-select-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; cursor: pointer; font-size: 13.5px; color: var(--text-primary); }
+.search-select-control:hover { border-color: var(--border-steel-light); }
+.search-select-control input { background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13.5px; width: 100%; font-family: inherit; }
+.search-select-control .placeholder { color: var(--text-tertiary); }
+.search-select-control svg { color: var(--text-tertiary); flex-shrink: 0; }
+.search-select-list { max-height: 240px; overflow-y: auto; background: var(--bg-panel-raised); border: 1px solid var(--border-steel-light); border-radius: 6px; z-index: 200; box-shadow: 0 16px 36px rgba(0,0,0,0.45); box-sizing: border-box; font-family: 'IBM Plex Sans Thai', sans-serif; }
+.search-select-list * { box-sizing: border-box; }
+.search-select-option { padding: 9px 12px; font-size: 13.5px; color: var(--text-primary); cursor: pointer; }
+.search-select-option:hover { background: var(--bg-panel); }
+.search-select-option.active { color: var(--accent-amber); font-weight: 600; }
+.search-select-empty { padding: 12px; font-size: 13px; color: var(--text-tertiary); text-align: center; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent-amber); }
+.field textarea { resize: vertical; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(10,12,14,0.65); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+.modal-panel { background: var(--bg-panel); border: 1px solid var(--border-steel-light); border-radius: 10px; width: 100%; max-width: 520px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+.modal-panel.modal-wide { max-width: 720px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-steel); }
+.modal-header h3 { font-size: 16px; }
+.modal-body { padding: 20px; overflow-y: auto; }
+.modal-foot { padding: 14px 20px; border-top: 1px solid var(--border-steel); display: flex; justify-content: flex-end; gap: 10px; }
+
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text-tertiary); font-size: 13.5px; }
+
+.login-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: radial-gradient(circle at 50% 15%, #1e242a 0%, var(--bg-void) 60%); position: relative; }
+.login-theme-toggle { position: absolute; top: 20px; right: 20px; background: var(--bg-panel); }
+.login-card { width: 100%; max-width: 460px; background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 16px; padding: 40px 36px; box-shadow: 0 24px 60px rgba(0,0,0,0.4); }
+.login-brand { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 30px; }
+.login-brand-mark { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(155deg, #FFC24D, var(--accent-amber)); display: flex; align-items: center; justify-content: center; color: #1A1300; margin-bottom: 16px; box-shadow: 0 10px 26px rgba(245,166,35,0.3); }
+.login-brand .t1 { font-family: 'Chakra Petch', sans-serif; font-size: 17px; font-weight: 700; }
+.login-brand .t2 { font-size: 11.5px; color: var(--text-tertiary); margin-top: 3px; letter-spacing: 0.03em; }
+.login-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; font-family: 'Chakra Petch', sans-serif; text-align: center; }
+.login-sub { color: var(--text-secondary); font-size: 13.5px; margin-bottom: 26px; line-height: 1.5; text-align: center; }
+.user-pick { display: flex; align-items: center; gap: 14px; background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 10px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: border-color .12s, background .12s, transform .12s; }
+.user-pick:hover { border-color: var(--accent-amber); background: var(--bg-panel-raised); transform: translateY(-1px); }
+.user-pick .info { flex: 1; min-width: 0; }
+.user-pick .info .n { font-weight: 700; font-size: 15px; }
+.user-pick .info .r { font-size: 12.5px; color: var(--text-tertiary); margin-top: 2px; }
+.user-pick .pick-chevron { flex-shrink: 0; }
+.page-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.page-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--bg-input); border: 1px solid var(--border-steel); color: var(--text-secondary); white-space: nowrap; }
+
+.comment { padding: 10px 0; border-bottom: 1px solid var(--border-steel); }
+.comment:last-child { border-bottom: none; }
+.comment .meta { font-size: 11.5px; color: var(--text-tertiary); margin-bottom: 3px; }
+.comment .txt { font-size: 13.5px; }
+
+.parts-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.parts-row select { flex: 2; }
+.parts-row .search-select { flex: 2; }
+.parts-row input { flex: 1; width: 0; background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; color: var(--text-primary); font-size: 13.5px; font-family: inherit; outline: none; }
+.parts-row input:focus { border-color: var(--accent-amber); }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-bottom: 16px; }
+.detail-grid .k { color: var(--text-tertiary); font-size: 11.5px; margin-bottom: 3px; }
+.detail-grid .v { color: var(--text-primary); font-weight: 500; font-size: 13.5px; }
+
+.qty-adjust { display: flex; align-items: center; gap: 8px; }
+.qty-adjust button { width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--border-steel); background: var(--bg-input); color: var(--text-primary); cursor: pointer; font-family: inherit; }
+.qty-adjust button:hover { background: var(--bg-panel-raised); }
+
+.item-thumb { cursor: pointer; transition: transform .12s, box-shadow .12s; }
+.item-thumb:hover { transform: scale(1.12); box-shadow: 0 0 0 2px var(--accent-amber); }
+
+/* ---- printable documents ---- */
+.print-paper { background: #F7F5F0; color: #1A1A1A; border-radius: 6px; padding: 30px; font-family: 'IBM Plex Sans Thai', sans-serif; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+.print-paper h2 { font-family: 'Chakra Petch', sans-serif; font-size: 20px; color: #1A1A1A; }
+.print-paper table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+.print-paper th, .print-paper td { border: 1px solid #CFC9BC; padding: 8px 10px; text-align: left; vertical-align: top; }
+.print-paper th { background: #EDEAE2; font-weight: 600; white-space: nowrap; }
+.print-paper .mono { font-family: 'JetBrains Mono', monospace; }
+.print-doc-badge { display: inline-block; border: 2px solid var(--accent-amber); color: #9C6B05; background: #FFF6E4; font-weight: 700; font-size: 13px; padding: 6px 16px; border-radius: 6px; white-space: nowrap; }
+.print-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 32px; margin-bottom: 20px; }
+.print-info-item { display: flex; align-items: flex-start; gap: 8px; }
+.print-info-item .k { font-size: 11.5px; color: #6B6B6B; margin-bottom: 2px; }
+.print-info-item .v { font-size: 13.5px; font-weight: 600; color: #1A1A1A; }
+.print-signatures { display: flex; justify-content: space-between; gap: 20px; margin-top: 54px; flex-wrap: wrap; }
+.print-sign-block { text-align: center; flex: 1; min-width: 140px; }
+.print-sign-line { border-top: 1px dotted #6B6B6B; margin-top: 46px; padding-top: 6px; font-size: 12.5px; color: #333; font-weight: 600; }
+.print-sign-date { font-size: 11.5px; color: #888; margin-top: 4px; }
+
+/* Receive/Issue slips: sized to fit exactly one A5-landscape sheet */
+.print-a5 { display: flex; flex-direction: column; padding: 20px 24px; }
+.print-a5-body { flex: 1 1 auto; }
+.print-a5 .print-info-grid { gap: 10px 24px; margin-bottom: 12px; }
+.print-a5 table { margin: 10px 0; font-size: 12px; }
+.print-a5 th, .print-a5 td { padding: 6px 9px; }
+.print-a5 .print-signatures { margin-top: 20px; }
+.print-a5 .print-sign-block { min-width: 110px; }
+.print-a5 .print-sign-line { margin-top: 26px; }
+
+/* Work order slip: sized to fit exactly one A5-portrait sheet */
+.print-a5-portrait .print-sign-block { min-width: 90px; }
+
+@media print {
+  .print-a5 { width: 194mm; height: 132mm; box-sizing: border-box; padding: 6mm 9mm; }
+  .print-a5.print-a5-portrait { width: 132mm; height: 194mm; padding: 6mm 8mm; }
+}
+
+@media print {
+  .cmms-root > .app-shell { display: none !important; }
+  .cmms-root .modal-overlay:not(.print-modal-overlay) { display: none !important; }
+  .cmms-root .no-print { display: none !important; }
+  .cmms-root .print-modal-overlay { position: static !important; background: none !important; padding: 0 !important; display: block !important; }
+  .cmms-root .print-modal-overlay .modal-panel { max-width: none !important; max-height: none !important; box-shadow: none !important; border: none !important; width: 100% !important; }
+  .cmms-root .print-modal-overlay .modal-body { overflow: visible !important; padding: 0 !important; }
+  .print-paper { box-shadow: none !important; }
+}
+
+@media (max-width: 860px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: relative; flex-direction: row; align-items: center; padding: 12px; overflow-x: auto; }
+  .brand { padding: 0 12px 0 0; }
+  .nav { flex-direction: row; overflow-x: auto; }
+  .nav-item { flex-shrink: 0; border-left: none; border-bottom: 3px solid transparent; }
+  .nav-item.active { border-left: none; border-bottom: 3px solid var(--accent-amber); }
+  .sidebar-foot { display: none; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .content { padding: 16px; }
+  .topbar { padding: 14px 16px; }
+}
+@media (max-width: 520px) {
+  .kpi-row { grid-template-columns: 1fr; }
+}
+`;
+/* ------------------------------------------------------------------------ */
+/* shared small components                                                    */
+/* ------------------------------------------------------------------------ */
+function Badge({ text, tone }) {
+    return React.createElement("span", { className: `badge badge-${tone}` }, text);
+}
+function KpiCard({ value, label, color }) {
+    return (React.createElement("div", { className: "kpi-card", style: { "--kpi-color": color } },
+        React.createElement("div", { className: "kpi-value mono" }, value),
+        React.createElement("div", { className: "kpi-label" }, label)));
+}
+function EmptyState({ text }) {
+    return React.createElement("div", { className: "empty-state" }, text);
+}
+function Modal({ title, onClose, children, wide, footer }) {
+    return (React.createElement("div", { className: "modal-overlay", onClick: onClose },
+        React.createElement("div", { className: `modal-panel${wide ? " modal-wide" : ""}`, onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { className: "modal-header" },
+                React.createElement("h3", null, title),
+                React.createElement("button", { className: "icon-btn", onClick: onClose },
+                    React.createElement(X, { size: 16 }))),
+            React.createElement("div", { className: "modal-body" }, children),
+            footer && React.createElement("div", { className: "modal-foot" }, footer))));
+}
+/* ------------------------------------------------------------------------ */
+/* searchable combobox (custom-rendered so it never depends on the           */
+/* browser's native <option> list styling)                                   */
+/* ------------------------------------------------------------------------ */
+function SearchSelect({ value, onChange, options, getValue, getLabel, placeholder, emptyLabel }) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const [rect, setRect] = useState(null);
+    const wrapRef = useRef(null);
+    useEffect(() => {
+        if (!open)
+            return undefined;
+        const updateRect = () => {
+            if (wrapRef.current) {
+                const r = wrapRef.current.getBoundingClientRect();
+                setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+            }
+        };
+        updateRect();
+        window.addEventListener("scroll", updateRect, true);
+        window.addEventListener("resize", updateRect);
+        return () => {
+            window.removeEventListener("scroll", updateRect, true);
+            window.removeEventListener("resize", updateRect);
+        };
+    }, [open]);
+    useEffect(() => {
+        const handleClick = (e) => {
+            const insideTrigger = wrapRef.current && wrapRef.current.contains(e.target);
+            const insidePortal = e.target.closest && e.target.closest(".search-select-portal");
+            if (!insideTrigger && !insidePortal) {
+                setOpen(false);
+                setQuery("");
+            }
+        };
+        document.addEventListener("mousedown", handleClick);
+        return () => document.removeEventListener("mousedown", handleClick);
+    }, []);
+    const selected = options.find((o) => getValue(o) === value);
+    const filtered = query.trim()
+        ? options.filter((o) => getLabel(o).toLowerCase().includes(query.trim().toLowerCase()))
+        : options;
+    const pick = (v) => {
+        onChange(v);
+        setOpen(false);
+        setQuery("");
+    };
+    return (React.createElement("div", { className: "search-select", ref: wrapRef },
+        React.createElement("div", { className: "search-select-control", onClick: () => setOpen((o) => !o) },
+            open ? (React.createElement("input", { autoFocus: true, type: "text", value: query, placeholder: selected ? getLabel(selected) : (placeholder || "พิมพ์เพื่อค้นหา..."), onChange: (e) => setQuery(e.target.value) })) : (React.createElement("span", { className: selected ? "" : "placeholder" }, selected ? getLabel(selected) : (placeholder || "เลือก..."))),
+            React.createElement(ChevronDown, { size: 14 })),
+        open && rect && (React.createElement("div", { className: "search-select-list search-select-portal", style: { position: "fixed", top: rect.top, left: rect.left, width: rect.width } },
+            emptyLabel && (React.createElement("div", { className: "search-select-option", onClick: () => pick("") }, emptyLabel)),
+            filtered.length === 0 ? (React.createElement("div", { className: "search-select-empty" }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32")) : (filtered.map((o) => (React.createElement("div", { key: getValue(o), className: `search-select-option${getValue(o) === value ? " active" : ""}`, onClick: () => pick(getValue(o)) }, getLabel(o)))))))));
+}
+function RecordForm({ fields, values, onChange }) {
+    return (React.createElement("div", { className: "form-grid" }, fields.map((f) => (React.createElement("div", { className: `field${f.wide ? " field-wide" : ""}`, key: f.key },
+        React.createElement("label", null,
+            f.label,
+            f.required && React.createElement("span", { className: "req" }, "*")),
+        f.type === "select" ? (React.createElement("select", { value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) },
+            React.createElement("option", { value: "", disabled: true }, "\u0E40\u0E25\u0E37\u0E2D\u0E01..."),
+            f.options.map((opt) => (React.createElement("option", { key: opt, value: opt }, f.optionLabels ? f.optionLabels[opt] : opt))))) : f.type === "textarea" ? (React.createElement("textarea", { rows: 3, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })) : (React.createElement("input", { type: f.type, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })))))));
+}
+/* ------------------------------------------------------------------------ */
+/* printable documents                                                        */
+/* ------------------------------------------------------------------------ */
+function PrintableModal({ onClose, children }) {
+    return (React.createElement("div", { className: "modal-overlay print-modal-overlay", onClick: onClose },
+        React.createElement("div", { className: "modal-panel modal-wide", onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { className: "modal-header no-print" },
+                React.createElement("h3", null, "\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23"),
+                React.createElement("div", { style: { display: "flex", gap: 8 } },
+                    React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => window.print() },
+                        React.createElement(Printer, { size: 14 }),
+                        " \u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23"),
+                    React.createElement("button", { className: "icon-btn", onClick: onClose },
+                        React.createElement(X, { size: 16 })))),
+            React.createElement("div", { className: "modal-body" }, children))));
+}
+function DocHeader({ docTypeLabel, docNo, compact }) {
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: compact ? 10 : 14 } },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: compact ? 8 : 10 } },
+                React.createElement("div", { style: { width: compact ? 26 : 34, height: compact ? 26 : 34, borderRadius: 6, background: "#F5A623", display: "flex", alignItems: "center", justifyContent: "center", color: "#1A1300", flexShrink: 0 } },
+                    React.createElement(Warehouse, { size: compact ? 14 : 18 })),
+                React.createElement("div", null,
+                    React.createElement("h2", { style: compact ? { margin: 0, fontSize: 14.5 } : { margin: 0 } }, "\u0E23\u0E30\u0E1A\u0E1A\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E33\u0E23\u0E38\u0E07 \u0E41\u0E25\u0E30 \u0E04\u0E25\u0E31\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                    React.createElement("div", { style: { fontSize: compact ? 10 : 11.5, color: "#666", marginTop: 1 } }, "TMT RAMA3"))),
+            React.createElement("div", { style: { textAlign: "right" } },
+                React.createElement("span", { className: "print-doc-badge", style: compact ? { fontSize: 11.5, padding: "4px 12px" } : undefined }, docTypeLabel),
+                React.createElement("div", { style: { fontSize: compact ? 10.5 : 12, color: "#666", marginTop: compact ? 5 : 8 } },
+                    "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48 / No: ",
+                    React.createElement("span", { className: "mono", style: { fontWeight: 700, color: "#1A1A1A" } }, docNo)))),
+        React.createElement("div", { style: { borderBottom: "2px solid #1A1A1A", margin: compact ? "9px 0 10px" : "16px 0 18px" } })));
+}
+function InfoItem({ icon: Icon, label, value, wide }) {
+    return (React.createElement("div", { className: "print-info-item", style: wide ? { gridColumn: "1 / -1" } : undefined },
+        React.createElement(Icon, { size: 15, color: "#9C6B05", style: { marginTop: 2, flexShrink: 0 } }),
+        React.createElement("div", null,
+            React.createElement("div", { className: "k" }, label),
+            React.createElement("div", { className: "v" }, value))));
+}
+function WoPrint({ data, assets, spareParts, printedAt }) {
+    const asset = assets.find((a) => a.id === data.assetId);
+    return (React.createElement("div", { className: "print-paper print-a5 print-a5-portrait" },
+        React.createElement("style", null, "@page { size: A5 portrait; margin: 8mm; }"),
+        React.createElement("div", { className: "print-a5-body" },
+            React.createElement(DocHeader, { docTypeLabel: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21", docNo: data.id, compact: true }),
+            React.createElement("div", { className: "print-info-grid" },
+                React.createElement(InfoItem, { icon: User, label: "\u0E1C\u0E39\u0E49\u0E41\u0E08\u0E49\u0E07", value: data.reportedBy }),
+                React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C", value: formatDateTime(printedAt) }),
+                React.createElement(InfoItem, { icon: Factory, label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C", value: asset ? asset.name : data.assetId }),
+                React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21", value: formatDatePrint(data.createdDate) }),
+                React.createElement(InfoItem, { icon: Wrench, label: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E07\u0E32\u0E19", value: WO_TYPE[data.type] }),
+                React.createElement(InfoItem, { icon: Tag, label: "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D", value: PRIORITY[data.priority] }),
+                React.createElement(InfoItem, { icon: Briefcase, label: "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A", value: data.assignedTo || "-" }),
+                React.createElement(InfoItem, { icon: Check, label: "\u0E2A\u0E16\u0E32\u0E19\u0E30", value: WO_STATUS[data.status] }),
+                data.completedDate && React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19", value: formatDatePrint(data.completedDate), wide: true })),
+            data.description && React.createElement("p", { style: { fontSize: 12, marginBottom: 10 } }, data.description),
+            data.partsUsed && data.partsUsed.length > 0 && (React.createElement(React.Fragment, null,
+                React.createElement("p", { style: { fontWeight: 600, fontSize: 12, marginBottom: 5 } }, "\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49"),
+                React.createElement("table", null,
+                    React.createElement("thead", null,
+                        React.createElement("tr", null,
+                            React.createElement("th", { style: { width: "10%" } }, "\u0E25\u0E33\u0E14\u0E31\u0E1A"),
+                            React.createElement("th", { style: { width: "22%" } }, "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                            React.createElement("th", null, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"),
+                            React.createElement("th", { style: { width: "18%" } }, "\u0E08\u0E33\u0E19\u0E27\u0E19"))),
+                    React.createElement("tbody", null,
+                        data.partsUsed.map((pu, i) => {
+                            const part = spareParts.find((sp) => sp.id === pu.partId);
+                            return (React.createElement("tr", { key: i },
+                                React.createElement("td", null, i + 1),
+                                React.createElement("td", { className: "mono" }, pu.partId),
+                                React.createElement("td", null, part ? part.name : pu.partId),
+                                React.createElement("td", null,
+                                    pu.qty,
+                                    " ",
+                                    part?.unit || "")));
+                        }),
+                        React.createElement("tr", null,
+                            React.createElement("td", { colSpan: "4", style: { textAlign: "center", fontStyle: "italic", color: "#999", fontSize: 11 } }, "** \u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E15\u0E32\u0E21\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E19\u0E35\u0E49 **"))))))),
+        React.createElement("div", { className: "print-signatures" },
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23\u0E0B\u0E48\u0E2D\u0E21"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A\u0E07\u0E32\u0E19"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
+}
+function ReceivePrint({ data, printedAt }) {
+    return (React.createElement("div", { className: "print-paper print-a5" },
+        React.createElement("style", null, "@page { size: A5 landscape; margin: 8mm; }"),
+        React.createElement("div", { className: "print-a5-body" },
+            React.createElement(DocHeader, { docTypeLabel: "\u0E43\u0E1A\u0E23\u0E31\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38", docNo: data.id, compact: true }),
+            React.createElement("div", { className: "print-info-grid" },
+                React.createElement(InfoItem, { icon: User, label: "\u0E1C\u0E39\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32", value: data.receivedBy || "-" }),
+                React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C", value: formatDateTime(printedAt) }),
+                React.createElement(InfoItem, { icon: Truck, label: "\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32/\u0E1C\u0E39\u0E49\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07", value: data.person || "-" }),
+                React.createElement(InfoItem, { icon: Tag, label: "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07", value: data.reference || "-" })),
+            React.createElement("table", null,
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", { style: { width: "10%" } }, "\u0E25\u0E33\u0E14\u0E31\u0E1A"),
+                        React.createElement("th", { style: { width: "22%" } }, "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("th", null, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("th", { style: { width: "18%" } }, "\u0E08\u0E33\u0E19\u0E27\u0E19"))),
+                React.createElement("tbody", null,
+                    React.createElement("tr", null,
+                        React.createElement("td", null, "1"),
+                        React.createElement("td", { className: "mono" }, data.itemId),
+                        React.createElement("td", null, data.itemName),
+                        React.createElement("td", null,
+                            data.qty,
+                            " ",
+                            data.unit)),
+                    React.createElement("tr", null,
+                        React.createElement("td", { colSpan: "4", style: { textAlign: "center", fontStyle: "italic", color: "#999", fontSize: 11 } }, "** \u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E15\u0E32\u0E21\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E19\u0E35\u0E49 **")))),
+            data.note && React.createElement("p", { style: { marginTop: 8, fontSize: 12 } },
+                "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38: ",
+                data.note)),
+        React.createElement("div", { className: "print-signatures" },
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
+}
+function IssuePrint({ data, printedAt }) {
+    return (React.createElement("div", { className: "print-paper print-a5" },
+        React.createElement("style", null, "@page { size: A5 landscape; margin: 8mm; }"),
+        React.createElement("div", { className: "print-a5-body" },
+            React.createElement(DocHeader, { docTypeLabel: "\u0E43\u0E1A\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48", docNo: data.id, compact: true }),
+            React.createElement("div", { className: "print-info-grid" },
+                React.createElement(InfoItem, { icon: User, label: "\u0E1C\u0E39\u0E49\u0E40\u0E1A\u0E34\u0E01", value: data.person || "-" }),
+                React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C", value: formatDateTime(printedAt) }),
+                React.createElement(InfoItem, { icon: Briefcase, label: "\u0E41\u0E1C\u0E19\u0E01/\u0E01\u0E25\u0E38\u0E48\u0E21\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E1C\u0E25", value: data.department || "-" }),
+                React.createElement(InfoItem, { icon: Tag, label: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", value: data.usageType || USAGE_TYPES[0] }),
+                React.createElement(InfoItem, { icon: MapPin, label: "\u0E08\u0E38\u0E14\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", value: data.usageLocation || data.reference || "-", wide: true })),
+            React.createElement("table", null,
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", { style: { width: "10%" } }, "\u0E25\u0E33\u0E14\u0E31\u0E1A"),
+                        React.createElement("th", { style: { width: "22%" } }, "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("th", null, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48"),
+                        React.createElement("th", { style: { width: "18%" } }, "\u0E08\u0E33\u0E19\u0E27\u0E19"))),
+                React.createElement("tbody", null,
+                    React.createElement("tr", null,
+                        React.createElement("td", null, "1"),
+                        React.createElement("td", { className: "mono" }, data.itemId),
+                        React.createElement("td", null, data.itemName),
+                        React.createElement("td", null,
+                            data.qty,
+                            " ",
+                            data.unit)),
+                    React.createElement("tr", null,
+                        React.createElement("td", { colSpan: "4", style: { textAlign: "center", fontStyle: "italic", color: "#999", fontSize: 11 } }, "** \u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E15\u0E32\u0E21\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E19\u0E35\u0E49 **")))),
+            data.note && React.createElement("p", { style: { marginTop: 8, fontSize: 12 } },
+                "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38: ",
+                data.note)),
+        React.createElement("div", { className: "print-signatures" },
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A/\u0E40\u0E1A\u0E34\u0E01"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E04\u0E25\u0E31\u0E07\u0E08\u0E48\u0E32\u0E22"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
+}
+function AssetHistoryPrint({ data, printedAt }) {
+    const { asset, pmSchedules, workOrders } = data;
+    return (React.createElement("div", { className: "print-paper" },
+        React.createElement("style", null, "@page { size: A4 portrait; margin: 14mm; }"),
+        React.createElement(DocHeader, { docTypeLabel: "\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C", docNo: asset.id }),
+        React.createElement("div", { className: "print-info-grid" },
+            React.createElement(InfoItem, { icon: Factory, label: "\u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C", value: asset.name, wide: true }),
+            React.createElement(InfoItem, { icon: Tag, label: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17", value: asset.type || "-" }),
+            React.createElement(InfoItem, { icon: MapPin, label: "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", value: asset.location || "-" }),
+            React.createElement(InfoItem, { icon: Briefcase, label: "\u0E41\u0E1C\u0E19\u0E01\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A", value: asset.department || "-" }),
+            React.createElement(InfoItem, { icon: Calendar, label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C", value: formatDateTime(printedAt) })),
+        React.createElement("p", { style: { fontWeight: 600, fontSize: 14, marginBottom: 8 } }, "\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32 (PM)"),
+        pmSchedules.length === 0 ? (React.createElement("p", { style: { fontSize: 13, color: "#777", marginBottom: 16 } }, "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32")) : (React.createElement("table", null,
+            React.createElement("thead", null,
+                React.createElement("tr", null,
+                    React.createElement("th", null, "\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E17\u0E33"),
+                    React.createElement("th", { style: { width: "14%" } }, "\u0E04\u0E27\u0E32\u0E21\u0E16\u0E35\u0E48"),
+                    React.createElement("th", { style: { width: "16%" } }, "\u0E17\u0E33\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14"),
+                    React.createElement("th", { style: { width: "18%" } }, "\u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E16\u0E31\u0E14\u0E44\u0E1B"),
+                    React.createElement("th", { style: { width: "18%" } }, "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A"))),
+            React.createElement("tbody", null, pmSchedules.map((pm) => (React.createElement("tr", { key: pm.id },
+                React.createElement("td", null, pm.taskName),
+                React.createElement("td", null,
+                    "\u0E17\u0E38\u0E01 ",
+                    pm.frequencyDays,
+                    " \u0E27\u0E31\u0E19"),
+                React.createElement("td", null, formatDatePrint(pm.lastDone)),
+                React.createElement("td", null, formatDatePrint(pm.nextDue)),
+                React.createElement("td", null, pm.assignedTo || "-"))))))),
+        React.createElement("p", { style: { fontWeight: 600, fontSize: 14, marginTop: 18, marginBottom: 8 } }, "\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
+        workOrders.length === 0 ? (React.createElement("p", { style: { fontSize: 13, color: "#777" } }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E0B\u0E48\u0E2D\u0E21")) : (React.createElement("table", null,
+            React.createElement("thead", null,
+                React.createElement("tr", null,
+                    React.createElement("th", { style: { width: "14%" } }, "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48"),
+                    React.createElement("th", null, "\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E07\u0E32\u0E19"),
+                    React.createElement("th", { style: { width: "16%" } }, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                    React.createElement("th", { style: { width: "16%" } }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07"),
+                    React.createElement("th", { style: { width: "16%" } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30"))),
+            React.createElement("tbody", null, workOrders.map((w) => (React.createElement("tr", { key: w.id },
+                React.createElement("td", { className: "mono" }, w.id),
+                React.createElement("td", null, w.title),
+                React.createElement("td", null, WO_TYPE[w.type]),
+                React.createElement("td", null, formatDatePrint(w.createdDate)),
+                React.createElement("td", null, WO_STATUS[w.status]))))))),
+        React.createElement("div", { className: "print-signatures" },
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E08\u0E31\u0E14\u0E17\u0E33\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
+            React.createElement("div", { className: "print-sign-block" },
+                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A"),
+                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
+}
+function PrintDocument({ type, data, assets, spareParts, printedAt }) {
+    if (!data)
+        return null;
+    if (type === "wo")
+        return React.createElement(WoPrint, { data: data, assets: assets, spareParts: spareParts, printedAt: printedAt });
+    if (type === "receive")
+        return React.createElement(ReceivePrint, { data: data, printedAt: printedAt });
+    if (type === "issue")
+        return React.createElement(IssuePrint, { data: data, printedAt: printedAt });
+    if (type === "asset-history")
+        return React.createElement(AssetHistoryPrint, { data: data, printedAt: printedAt });
+    return null;
+}
+/* ------------------------------------------------------------------------ */
+/* login                                                                       */
+/* ------------------------------------------------------------------------ */
+function LoginScreen({ users, onLogin, theme, onToggleTheme }) {
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [passcode, setPasscode] = useState("");
+    const [error, setError] = useState("");
+    const [showPasscode, setShowPasscode] = useState(false);
+    const pick = (u) => { setSelectedUser(u); setPasscode(""); setError(""); setShowPasscode(false); };
+    const back = () => { setSelectedUser(null); setPasscode(""); setError(""); setShowPasscode(false); };
+    const submit = () => {
+        if (!selectedUser)
+            return;
+        if (passcode === ROLE_PASSCODES[selectedUser.role]) {
+            onLogin(selectedUser);
+        }
+        else {
+            setError("รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+        }
+    };
+    return (React.createElement("div", { className: "login-shell" },
+        React.createElement("button", { className: "icon-btn login-theme-toggle", onClick: onToggleTheme, title: theme === "dark" ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด" }, theme === "dark" ? React.createElement(Sun, { size: 16 }) : React.createElement(Moon, { size: 16 })),
+        React.createElement("div", { className: "login-card" },
+            React.createElement("div", { className: "login-brand" },
+                React.createElement("div", { className: "login-brand-mark" },
+                    React.createElement(Warehouse, { size: 28 })),
+                React.createElement("div", { className: "t1" }, "\u0E23\u0E30\u0E1A\u0E1A\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E33\u0E23\u0E38\u0E07 \u0E41\u0E25\u0E30 \u0E04\u0E25\u0E31\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                React.createElement("div", { className: "t2" }, "TMT RAMA3")),
+            !selectedUser ? (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "login-title" }, "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A"),
+                React.createElement("div", { className: "login-sub" }, "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 \u0E08\u0E32\u0E01\u0E19\u0E31\u0E49\u0E19\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E1A\u0E17\u0E1A\u0E32\u0E17\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A"),
+                users.map((u) => (React.createElement("div", { className: "user-pick", key: u.id, onClick: () => pick(u) },
+                    React.createElement("div", { className: "avatar" }, u.name.slice(0, 1)),
+                    React.createElement("div", { className: "info" },
+                        React.createElement("div", { className: "n" }, u.name),
+                        React.createElement("div", { className: "r" }, ROLES[u.role])),
+                    React.createElement(ChevronRight, { size: 16, className: "pick-chevron", color: "var(--text-tertiary)" })))))) : (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "login-title" }, "\u0E43\u0E2A\u0E48\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19"),
+                React.createElement("div", { className: "login-sub" },
+                    "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22\u0E1A\u0E31\u0E0D\u0E0A\u0E35 ",
+                    selectedUser.name,
+                    " (",
+                    ROLES[selectedUser.role],
+                    ")"),
+                React.createElement("div", { className: "field", style: { marginBottom: 14 } },
+                    React.createElement("label", null, "\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E1A\u0E17\u0E1A\u0E32\u0E17"),
+                    React.createElement("div", { style: { position: "relative" } },
+                        React.createElement(Lock, { size: 15, style: { position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" } }),
+                        React.createElement("input", { autoFocus: true, type: showPasscode ? "text" : "password", value: passcode, onChange: (e) => { setPasscode(e.target.value); setError(""); }, onKeyDown: (e) => { if (e.key === "Enter")
+                                submit(); }, style: { paddingLeft: 32, paddingRight: 38 }, placeholder: "\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19" }),
+                        React.createElement("button", { type: "button", onClick: () => setShowPasscode((s) => !s), title: showPasscode ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน", style: { position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex", alignItems: "center", padding: 4 } }, showPasscode ? React.createElement(EyeOff, { size: 15 }) : React.createElement(Eye, { size: 15 })))),
+                error && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
+                    React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, error))),
+                React.createElement("div", { style: { display: "flex", gap: 10 } },
+                    React.createElement("button", { className: "btn btn-outline", onClick: back, style: { flex: 1, justifyContent: "center" } }, "\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A"),
+                    React.createElement("button", { className: "btn btn-primary", onClick: submit, style: { flex: 1, justifyContent: "center" } }, "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A")))))));
+}
+/* ------------------------------------------------------------------------ */
+/* sidebar / topbar                                                           */
+/* ------------------------------------------------------------------------ */
+function Sidebar({ active, setActive, role, isAdmin, onLogout, onReset }) {
+    const items = NAV_ITEMS.filter((it) => canAccess(role, it.key));
+    return (React.createElement("div", { className: "sidebar" },
+        React.createElement("div", { className: "brand" },
+            React.createElement("div", { className: "brand-mark" },
+                React.createElement(Warehouse, { size: 18 })),
+            React.createElement("div", { className: "brand-text" },
+                React.createElement("div", { className: "t1" }, "\u0E23\u0E30\u0E1A\u0E1A\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E33\u0E23\u0E38\u0E07 \u0E41\u0E25\u0E30 \u0E04\u0E25\u0E31\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                React.createElement("div", { className: "t2" }, "TMT RAMA3"))),
+        React.createElement("div", { className: "nav" }, items.map((it) => {
+            const Icon = it.icon;
+            return (React.createElement("button", { key: it.key, className: `nav-item${active === it.key ? " active" : ""}`, onClick: () => setActive(it.key) },
+                React.createElement(Icon, { size: 17 }),
+                React.createElement("span", null, it.label)));
+        })),
+        React.createElement("div", { className: "sidebar-foot" },
+            isAdmin && (React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onReset },
+                React.createElement(RotateCcw, { size: 14 }),
+                " \u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E32\u0E18\u0E34\u0E15")),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onLogout },
+                React.createElement(LogOut, { size: 14 }),
+                " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A"))));
+}
+function Topbar({ title, sub, user, theme, onToggleTheme }) {
+    return (React.createElement("div", { className: "topbar" },
+        React.createElement("div", null,
+            React.createElement("div", { className: "page-title" }, title),
+            sub && React.createElement("div", { className: "page-sub" }, sub)),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+            React.createElement("button", { className: "icon-btn", onClick: onToggleTheme, title: theme === "dark" ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด" }, theme === "dark" ? React.createElement(Sun, { size: 16 }) : React.createElement(Moon, { size: 16 })),
+            React.createElement("div", { className: "user-chip" },
+                React.createElement("div", { className: "avatar" }, user.name.slice(0, 1)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "name" }, user.name),
+                    React.createElement("div", { className: "role" }, ROLES[user.role]))))));
+}
+/* ------------------------------------------------------------------------ */
+/* dashboard                                                                   */
+/* ------------------------------------------------------------------------ */
+const PIE_COLORS = { NORMAL: "var(--status-good)", MAINT: "var(--status-warn)", DOWN: "var(--status-bad)" };
+const TYPE_COLORS = { PM: "var(--status-good)", CORRECTIVE: "var(--status-warn)", BREAKDOWN: "var(--status-bad)" };
+function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }) {
+    const totalAssets = assets.length;
+    const openWO = workOrders.filter((w) => w.status === "OPEN" || w.status === "INPROGRESS").length;
+    const overduePM = pmSchedules.filter((p) => pmStatusOf(p) === "overdue").length;
+    const lowParts = spareParts.filter((p) => partStatusOf(p) !== "ok").length;
+    const assetDist = useMemo(() => {
+        const counts = {};
+        assets.forEach((a) => {
+            const s = deriveAssetStatus(a.id, workOrders);
+            counts[s] = (counts[s] || 0) + 1;
+        });
+        return Object.keys(ASSET_STATUS).map((k) => ({ name: ASSET_STATUS[k], value: counts[k] || 0, key: k }));
+    }, [assets, workOrders]);
+    const woByPriority = useMemo(() => {
+        const counts = {};
+        workOrders.forEach((w) => {
+            if (w.status !== "DONE" && w.status !== "CANCELLED")
+                counts[w.priority] = (counts[w.priority] || 0) + 1;
+        });
+        return Object.keys(PRIORITY).map((k) => ({ name: PRIORITY[k], value: counts[k] || 0 }));
+    }, [workOrders]);
+    const upcomingPM = useMemo(() => [...pmSchedules].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue)).slice(0, 5), [pmSchedules]);
+    const recentWO = useMemo(() => [...workOrders].sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)).slice(0, 5), [workOrders]);
+    const assetName = (id) => assets.find((a) => a.id === id)?.name || id;
+    // Which equipment gets sent for repair the most, as a share of all work orders raised
+    const repairFrequency = useMemo(() => {
+        const counts = {};
+        workOrders.forEach((w) => { counts[w.assetId] = (counts[w.assetId] || 0) + 1; });
+        const total = workOrders.length || 1;
+        return assets
+            .map((a) => ({ id: a.id, name: a.name, count: counts[a.id] || 0, pct: Math.round(((counts[a.id] || 0) / total) * 100) }))
+            .filter((a) => a.count > 0)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 6);
+    }, [assets, workOrders]);
+    // What proportion of reported issues are breakdowns vs. scheduled PM vs. general corrective work
+    const woTypeDist = useMemo(() => {
+        const counts = {};
+        workOrders.forEach((w) => { counts[w.type] = (counts[w.type] || 0) + 1; });
+        const total = workOrders.length || 1;
+        return Object.keys(WO_TYPE).map((k) => ({
+            key: k,
+            name: WO_TYPE[k],
+            value: counts[k] || 0,
+            pct: Math.round(((counts[k] || 0) / total) * 100),
+        }));
+    }, [workOrders]);
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "kpi-row" },
+            React.createElement(KpiCard, { value: totalAssets, label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A", color: "var(--accent-amber)" }),
+            React.createElement(KpiCard, { value: openWO, label: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08", color: "var(--status-warn)" }),
+            React.createElement(KpiCard, { value: overduePM, label: "\u0E41\u0E1C\u0E19 PM \u0E17\u0E35\u0E48\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14", color: "var(--status-bad)" }),
+            React.createElement(KpiCard, { value: lowParts, label: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14 / \u0E2B\u0E21\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01", color: "var(--status-neutral)" })),
+        React.createElement("div", { className: "grid-2", style: { marginBottom: 14 } },
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14"),
+                React.createElement("div", { style: { width: "100%", height: 220 } },
+                    React.createElement(ResponsiveContainer, null,
+                        React.createElement(PieChart, null,
+                            React.createElement(Pie, { data: assetDist, dataKey: "value", nameKey: "name", innerRadius: 55, outerRadius: 80, paddingAngle: 3 }, assetDist.map((d) => React.createElement(Cell, { key: d.key, fill: PIE_COLORS[d.key] }))),
+                            React.createElement(Tooltip, { contentStyle: { background: "var(--bg-panel-raised)", border: "1px solid var(--border-steel-light)", borderRadius: 6, fontSize: 12.5, color: "var(--text-primary)" }, itemStyle: { color: "var(--text-primary)" }, labelStyle: { color: "var(--text-primary)" } })))),
+                React.createElement("div", { style: { display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginTop: 6 } }, assetDist.map((d) => (React.createElement("div", { key: d.key, style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--text-secondary)" } },
+                    React.createElement("span", { style: { width: 8, height: 8, borderRadius: 4, background: PIE_COLORS[d.key], display: "inline-block" } }),
+                    d.name,
+                    " (",
+                    d.value,
+                    ")"))))),
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" }, "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19 \u0E41\u0E22\u0E01\u0E15\u0E32\u0E21\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D"),
+                React.createElement("div", { style: { width: "100%", height: 260 } },
+                    React.createElement(ResponsiveContainer, null,
+                        React.createElement(BarChart, { data: woByPriority },
+                            React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "var(--border-steel)", vertical: false }),
+                            React.createElement(XAxis, { dataKey: "name", stroke: "var(--text-secondary)", fontSize: 12 }),
+                            React.createElement(YAxis, { stroke: "var(--text-secondary)", fontSize: 12, allowDecimals: false }),
+                            React.createElement(Tooltip, { contentStyle: { background: "var(--bg-panel-raised)", border: "1px solid var(--border-steel-light)", borderRadius: 6, fontSize: 12.5, color: "var(--text-primary)" }, itemStyle: { color: "var(--text-primary)" }, labelStyle: { color: "var(--text-primary)" }, cursor: { fill: "rgba(128,128,128,0.08)" } }),
+                            React.createElement(Bar, { dataKey: "value", fill: "var(--accent-amber)", radius: [4, 4, 0, 0] })))))),
+        React.createElement("div", { className: "grid-2" },
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" },
+                    "\u0E41\u0E1C\u0E19 PM \u0E17\u0E35\u0E48\u0E43\u0E01\u0E25\u0E49\u0E16\u0E36\u0E07\u0E01\u0E33\u0E2B\u0E19\u0E14",
+                    React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setActive("pm") }, "\u0E14\u0E39\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")),
+                upcomingPM.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32" })) : (upcomingPM.map((pm) => (React.createElement("div", { key: pm.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border-steel)" } },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "cell-primary", style: { fontSize: 13.5 } }, pm.taskName),
+                        React.createElement("div", { className: "cell-sub" }, assetName(pm.assetId))),
+                    React.createElement(Badge, { text: formatDate(pm.nextDue), tone: toneMap.pm[pmStatusOf(pm)] })))))),
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" },
+                    "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14",
+                    React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setActive("workorders") }, "\u0E14\u0E39\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")),
+                recentWO.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21" })) : (recentWO.map((w) => (React.createElement("div", { key: w.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border-steel)" } },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "cell-primary", style: { fontSize: 13.5 } }, w.title),
+                        React.createElement("div", { className: "cell-sub" }, assetName(w.assetId))),
+                    React.createElement("div", { style: { textAlign: "right" } },
+                        React.createElement(Badge, { text: WO_STATUS[w.status], tone: toneMap.wo[w.status] }),
+                        React.createElement("div", { className: "cell-sub", style: { marginTop: 4 } }, formatDate(w.createdDate))))))))),
+        React.createElement("div", { className: "grid-2", style: { marginTop: 14 } },
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" }, "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E48\u0E2D\u0E22\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14"),
+                repairFrequency.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21" })) : (repairFrequency.map((a) => (React.createElement("div", { key: a.id, style: { marginBottom: 14 } },
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 13, marginBottom: 6, gap: 10 } },
+                        React.createElement("span", { style: { color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, a.name),
+                        React.createElement("span", { className: "mono", style: { color: "var(--text-secondary)", fontSize: 12.5, flexShrink: 0 } },
+                            a.count,
+                            " \u0E04\u0E23\u0E31\u0E49\u0E07 (",
+                            a.pct,
+                            "%)")),
+                    React.createElement("div", { style: { height: 6, background: "var(--bg-input)", borderRadius: 4, overflow: "hidden" } },
+                        React.createElement("div", { style: { width: `${a.pct}%`, height: "100%", background: "var(--accent-amber)", borderRadius: 4 } }))))))),
+            React.createElement("div", { className: "panel" },
+                React.createElement("div", { className: "panel-title" }, "\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
+                workOrders.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21" })) : (React.createElement(React.Fragment, null,
+                    React.createElement("div", { style: { width: "100%", height: 180 } },
+                        React.createElement(ResponsiveContainer, null,
+                            React.createElement(PieChart, null,
+                                React.createElement(Pie, { data: woTypeDist, dataKey: "value", nameKey: "name", innerRadius: 48, outerRadius: 72, paddingAngle: 3 }, woTypeDist.map((d) => React.createElement(Cell, { key: d.key, fill: TYPE_COLORS[d.key] }))),
+                                React.createElement(Tooltip, { contentStyle: { background: "var(--bg-panel-raised)", border: "1px solid var(--border-steel-light)", borderRadius: 6, fontSize: 12.5, color: "var(--text-primary)" }, itemStyle: { color: "var(--text-primary)" }, labelStyle: { color: "var(--text-primary)" } })))),
+                    woTypeDist.map((d) => (React.createElement("div", { key: d.key, style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-steel)" } },
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 } },
+                            React.createElement("span", { style: { width: 8, height: 8, borderRadius: 4, background: TYPE_COLORS[d.key], display: "inline-block" } }),
+                            d.name),
+                        React.createElement("span", { className: "mono", style: { fontSize: 12.5, color: "var(--text-secondary)" } },
+                            d.value,
+                            " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 (",
+                            d.pct,
+                            "%)"))))))))));
+}
+/* ------------------------------------------------------------------------ */
+/* assets                                                                      */
+/* ------------------------------------------------------------------------ */
+function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint }) {
+    const [query, setQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [modal, setModal] = useState(null);
+    const [formValues, setFormValues] = useState({});
+    const [detail, setDetail] = useState(null);
+    const fields = [
+        { key: "name", label: "ชื่ออุปกรณ์", type: "text", required: true, wide: true },
+        { key: "type", label: "ประเภทอุปกรณ์", type: "select", options: ASSET_TYPES },
+        { key: "location", label: "ตำแหน่งที่ใช้งาน", type: "text" },
+        { key: "department", label: "แผนกที่รับผิดชอบ", type: "text" },
+        { key: "serialNumber", label: "หมายเลขเครื่อง (Serial No.)", type: "text" },
+        { key: "installDate", label: "วันที่ติดตั้ง", type: "date" },
+    ];
+    const filtered = assets.filter((a) => {
+        const q = query.toLowerCase();
+        const matchQ = !query || a.name.toLowerCase().includes(q) || (a.serialNumber || "").toLowerCase().includes(q);
+        const matchS = !statusFilter || deriveAssetStatus(a.id, workOrders) === statusFilter;
+        return matchQ && matchS;
+    });
+    const nextPmFor = (assetId) => {
+        const list = pmSchedules.filter((p) => p.assetId === assetId);
+        if (list.length === 0)
+            return null;
+        return [...list].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue))[0];
+    };
+    const openAdd = () => { setFormValues({}); setModal({ mode: "add" }); };
+    const openEdit = (a) => { setFormValues(a); setModal({ mode: "edit", id: a.id }); };
+    const submit = () => {
+        if (!formValues.name)
+            return;
+        if (modal.mode === "add") {
+            const id = genId("AST", assets);
+            onChange([...assets, { id, ...formValues }]);
+        }
+        else {
+            onChange(assets.map((a) => (a.id === modal.id ? { ...a, ...formValues } : a)));
+        }
+        setModal(null);
+    };
+    const remove = (id) => {
+        onChange(assets.filter((a) => a.id !== id));
+        setDetail(null);
+    };
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar" },
+            React.createElement("div", { className: "search-box" },
+                React.createElement(Search, { size: 15 }),
+                React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07", value: query, onChange: (e) => setQuery(e.target.value) })),
+            React.createElement("select", { className: "select-filter", value: statusFilter, onChange: (e) => setStatusFilter(e.target.value) },
+                React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                Object.keys(ASSET_STATUS).map((k) => React.createElement("option", { key: k, value: k }, ASSET_STATUS[k]))),
+            React.createElement("div", { className: "spacer" }),
+            canEdit && React.createElement("button", { className: "btn btn-primary", onClick: openAdd },
+                React.createElement(Plus, { size: 15 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C")),
+        React.createElement("div", { className: "panel" }, filtered.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32" })) : (React.createElement("div", { className: "table-wrap" },
+            React.createElement("table", { className: "data-table" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "\u0E23\u0E2B\u0E31\u0E2A"),
+                        React.createElement("th", null, "\u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                        React.createElement("th", null, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                        React.createElement("th", null, "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07"),
+                        React.createElement("th", null, "PM \u0E16\u0E31\u0E14\u0E44\u0E1B"),
+                        React.createElement("th", null, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, filtered.map((a) => {
+                    const npm = nextPmFor(a.id);
+                    const liveStatus = deriveAssetStatus(a.id, workOrders);
+                    return (React.createElement("tr", { key: a.id, className: "row-clickable", onClick: () => setDetail(a) },
+                        React.createElement("td", { className: "mono" }, a.id),
+                        React.createElement("td", null,
+                            React.createElement("div", { className: "cell-primary" }, a.name),
+                            React.createElement("div", { className: "cell-sub" }, a.serialNumber)),
+                        React.createElement("td", null, a.type),
+                        React.createElement("td", null, a.location),
+                        React.createElement("td", null, npm ? formatDate(npm.nextDue) : "-"),
+                        React.createElement("td", null,
+                            React.createElement(Badge, { text: ASSET_STATUS[liveStatus], tone: toneMap.asset[liveStatus] })),
+                        React.createElement("td", { onClick: (e) => e.stopPropagation() }, canEdit && (React.createElement("div", { className: "row-actions" },
+                            React.createElement("button", { className: "icon-btn", onClick: () => openEdit(a) },
+                                React.createElement(Edit2, { size: 14 })),
+                            React.createElement("button", { className: "icon-btn", onClick: () => remove(a.id) },
+                                React.createElement(Trash2, { size: 14 })))))));
+                })))))),
+        modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มอุปกรณ์ใหม่" : "แก้ไขข้อมูลอุปกรณ์", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submit },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+        detail && (React.createElement(Modal, { title: detail.name, onClose: () => setDetail(null), wide: true },
+            React.createElement("div", { className: "detail-grid" },
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                    React.createElement("div", { className: "v mono" }, detail.id)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30 (\u0E04\u0E33\u0E19\u0E27\u0E13\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34)"),
+                    React.createElement("div", { className: "v" },
+                        React.createElement(Badge, { text: ASSET_STATUS[deriveAssetStatus(detail.id, workOrders)], tone: toneMap.asset[deriveAssetStatus(detail.id, workOrders)] }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                    React.createElement("div", { className: "v" }, detail.type)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"),
+                    React.createElement("div", { className: "v" }, detail.location)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E41\u0E1C\u0E19\u0E01\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A"),
+                    React.createElement("div", { className: "v" }, detail.department)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07"),
+                    React.createElement("div", { className: "v mono" }, detail.serialNumber)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E15\u0E34\u0E14\u0E15\u0E31\u0E49\u0E07"),
+                    React.createElement("div", { className: "v" }, formatDate(detail.installDate)))),
+            React.createElement("p", { style: { fontSize: 12.5, color: "var(--text-tertiary)", marginTop: -10, marginBottom: 16 } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E19\u0E35\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E40\u0E1B\u0E34\u0E14\u0E2D\u0E22\u0E39\u0E48\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E2A\u0E16\u0E32\u0E19\u0E30 \u0E43\u0E2B\u0E49\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21/\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02\u0E15\u0E23\u0E07\u0E19\u0E35\u0E49"),
+            React.createElement("div", { className: "panel-title", style: { marginBottom: 8 } }, "\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49"),
+            pmSchedules.filter((p) => p.assetId === detail.id).length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E41\u0E1C\u0E19 PM" })) : (pmSchedules.filter((p) => p.assetId === detail.id).map((pm) => (React.createElement("div", { key: pm.id, style: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-steel)" } },
+                React.createElement("span", { style: { fontSize: 13.5 } }, pm.taskName),
+                React.createElement(Badge, { text: formatDate(pm.nextDue), tone: toneMap.pm[pmStatusOf(pm)] }))))),
+            React.createElement("div", { className: "panel-title", style: { margin: "18px 0 8px" } }, "\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
+            workOrders.filter((w) => w.assetId === detail.id).length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E0B\u0E48\u0E2D\u0E21" })) : (workOrders.filter((w) => w.assetId === detail.id).sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)).map((w) => (React.createElement("div", { key: w.id, style: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-steel)" } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 13.5 } }, w.title),
+                    React.createElement("div", { className: "cell-sub" }, formatDate(w.createdDate))),
+                React.createElement(Badge, { text: WO_STATUS[w.status], tone: toneMap.wo[w.status] }))))),
+            React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" } },
+                React.createElement("button", { className: "btn btn-outline", onClick: () => onPrint("asset-history", {
+                        asset: detail,
+                        pmSchedules: pmSchedules.filter((p) => p.assetId === detail.id),
+                        workOrders: workOrders.filter((w) => w.assetId === detail.id).sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)),
+                    }) },
+                    React.createElement(Printer, { size: 14 }),
+                    " \u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                canEdit && React.createElement("button", { className: "btn btn-outline", onClick: () => { openEdit(detail); setDetail(null); } },
+                    React.createElement(Edit2, { size: 14 }),
+                    " \u0E41\u0E01\u0E49\u0E44\u0E02"),
+                canEdit && React.createElement("button", { className: "btn btn-danger", onClick: () => remove(detail.id) },
+                    React.createElement(Trash2, { size: 14 }),
+                    " \u0E25\u0E1A\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"))))));
+}
+/* ------------------------------------------------------------------------ */
+/* pm schedule                                                                 */
+/* ------------------------------------------------------------------------ */
+function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, currentUser }) {
+    const [statusFilter, setStatusFilter] = useState("");
+    const [modal, setModal] = useState(null);
+    const [formValues, setFormValues] = useState({});
+    const assetOptions = assets.map((a) => a.id);
+    const assetLabels = Object.fromEntries(assets.map((a) => [a.id, a.name]));
+    const userNames = users.map((u) => u.name);
+    const fields = [
+        { key: "assetId", label: "อุปกรณ์", type: "select", options: assetOptions, optionLabels: assetLabels, required: true, wide: true },
+        { key: "taskName", label: "งานที่ต้องทำ", type: "text", required: true, wide: true },
+        { key: "frequencyDays", label: "ความถี่ (ทุกกี่วัน)", type: "number", required: true },
+        { key: "lastDone", label: "ทำล่าสุดวันที่", type: "date" },
+        { key: "assignedTo", label: "ผู้รับผิดชอบ", type: "select", options: userNames },
+    ];
+    const statusLabel = { ok: "ปกติ", soon: "ใกล้ครบกำหนด", overdue: "เกินกำหนด" };
+    const assetName = (id) => assets.find((a) => a.id === id)?.name || id;
+    const withStatus = pmSchedules.map((p) => ({ ...p, _status: pmStatusOf(p) }));
+    const filtered = statusFilter ? withStatus.filter((p) => p._status === statusFilter) : withStatus;
+    const sorted = [...filtered].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue));
+    const openAdd = () => { setFormValues({ lastDone: today(), frequencyDays: 30 }); setModal({ mode: "add" }); };
+    const openEdit = (p) => { setFormValues(p); setModal({ mode: "edit", id: p.id }); };
+    const submit = () => {
+        if (!formValues.assetId || !formValues.taskName)
+            return;
+        const freq = Number(formValues.frequencyDays) || 30;
+        const lastDone = formValues.lastDone || today();
+        const record = { ...formValues, frequencyDays: freq, lastDone, nextDue: addDays(lastDone, freq) };
+        if (modal.mode === "add") {
+            const id = genId("PM", pmSchedules);
+            onChange([...pmSchedules, { id, ...record }]);
+        }
+        else {
+            onChange(pmSchedules.map((p) => (p.id === modal.id ? { ...p, ...record } : p)));
+        }
+        setModal(null);
+    };
+    const remove = (id) => onChange(pmSchedules.filter((p) => p.id !== id));
+    const markDone = (p) => {
+        const nextDue = addDays(today(), p.frequencyDays);
+        onChange(pmSchedules.map((x) => (x.id === p.id ? { ...x, lastDone: today(), nextDue } : x)));
+        onLogWorkOrder({
+            assetId: p.assetId,
+            type: "PM",
+            title: `บำรุงรักษาตามแผน: ${p.taskName}`,
+            description: "บันทึกอัตโนมัติจากการทำเครื่องหมายว่าแผน PM เสร็จสิ้น",
+            reportedBy: currentUser.name,
+            assignedTo: p.assignedTo || currentUser.name,
+            priority: "MED",
+            status: "DONE",
+            createdDate: today(),
+            completedDate: today(),
+            partsUsed: [],
+            comments: [],
+        });
+    };
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar" },
+            React.createElement("select", { className: "select-filter", value: statusFilter, onChange: (e) => setStatusFilter(e.target.value) },
+                React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                React.createElement("option", { value: "overdue" }, "\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14"),
+                React.createElement("option", { value: "soon" }, "\u0E43\u0E01\u0E25\u0E49\u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14"),
+                React.createElement("option", { value: "ok" }, "\u0E1B\u0E01\u0E15\u0E34")),
+            React.createElement("div", { className: "spacer" }),
+            canEdit && React.createElement("button", { className: "btn btn-primary", onClick: openAdd },
+                React.createElement(Plus, { size: 15 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E41\u0E1C\u0E19 PM")),
+        React.createElement("div", { className: "panel" }, sorted.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32" })) : (React.createElement("div", { className: "table-wrap" },
+            React.createElement("table", { className: "data-table" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                        React.createElement("th", null, "\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E17\u0E33"),
+                        React.createElement("th", null, "\u0E04\u0E27\u0E32\u0E21\u0E16\u0E35\u0E48"),
+                        React.createElement("th", null, "\u0E17\u0E33\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14"),
+                        React.createElement("th", null, "\u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E16\u0E31\u0E14\u0E44\u0E1B"),
+                        React.createElement("th", null, "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A"),
+                        React.createElement("th", null, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, sorted.map((p) => (React.createElement("tr", { key: p.id },
+                    React.createElement("td", null, assetName(p.assetId)),
+                    React.createElement("td", null, p.taskName),
+                    React.createElement("td", null,
+                        "\u0E17\u0E38\u0E01 ",
+                        p.frequencyDays,
+                        " \u0E27\u0E31\u0E19"),
+                    React.createElement("td", null, formatDate(p.lastDone)),
+                    React.createElement("td", null, formatDate(p.nextDue)),
+                    React.createElement("td", null, p.assignedTo || "-"),
+                    React.createElement("td", null,
+                        React.createElement(Badge, { text: statusLabel[p._status], tone: toneMap.pm[p._status] })),
+                    React.createElement("td", null,
+                        React.createElement("div", { className: "row-actions" },
+                            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => markDone(p) },
+                                React.createElement(Check, { size: 13 }),
+                                " \u0E17\u0E33\u0E41\u0E25\u0E49\u0E27"),
+                            canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
+                                React.createElement(Edit2, { size: 14 })),
+                            canEdit && React.createElement("button", { className: "icon-btn", onClick: () => remove(p.id) },
+                                React.createElement(Trash2, { size: 14 })))))))))))),
+        modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มแผนบำรุงรักษา" : "แก้ไขแผนบำรุงรักษา", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submit },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) })))));
+}
+/* ------------------------------------------------------------------------ */
+/* work orders                                                                 */
+/* ------------------------------------------------------------------------ */
+function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canManage, currentUser, onChange, onPartsChange, onTxnsChange, onPrint }) {
+    const [statusFilter, setStatusFilter] = useState("");
+    const [query, setQuery] = useState("");
+    const [modal, setModal] = useState(null);
+    const [formValues, setFormValues] = useState({});
+    const [detail, setDetail] = useState(null);
+    const [completeModal, setCompleteModal] = useState(null);
+    const [completeParts, setCompleteParts] = useState([{ partId: "", qty: 1 }]);
+    const [completeError, setCompleteError] = useState("");
+    const [editCompleteModal, setEditCompleteModal] = useState(null);
+    const [editCompleteParts, setEditCompleteParts] = useState([{ partId: "", qty: 1 }]);
+    const [editCompleteDate, setEditCompleteDate] = useState("");
+    const [editCompleteError, setEditCompleteError] = useState("");
+    const [commentText, setCommentText] = useState("");
+    const assetOptions = assets.map((a) => a.id);
+    const assetLabels = Object.fromEntries(assets.map((a) => [a.id, a.name]));
+    const userNames = users.map((u) => u.name);
+    const assetName = (id) => assets.find((a) => a.id === id)?.name || id;
+    const fields = [
+        { key: "assetId", label: "อุปกรณ์", type: "select", options: assetOptions, optionLabels: assetLabels, required: true, wide: true },
+        { key: "title", label: "หัวข้อปัญหา/งาน", type: "text", required: true, wide: true },
+        { key: "description", label: "รายละเอียด", type: "textarea", wide: true },
+        { key: "type", label: "ประเภทงาน", type: "select", options: Object.keys(WO_TYPE), optionLabels: WO_TYPE },
+        { key: "priority", label: "ความสำคัญ", type: "select", options: Object.keys(PRIORITY), optionLabels: PRIORITY },
+        { key: "assignedTo", label: "ผู้รับผิดชอบ", type: "select", options: userNames },
+    ];
+    const filtered = workOrders
+        .filter((w) => {
+        const q = query.toLowerCase();
+        const matchS = !statusFilter || w.status === statusFilter;
+        const matchQ = !query || w.title.toLowerCase().includes(q) || assetName(w.assetId).toLowerCase().includes(q);
+        return matchS && matchQ;
+    })
+        .sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate));
+    const openAdd = () => { setFormValues({ type: "CORRECTIVE", priority: "MED", reportedBy: currentUser.name }); setModal({ mode: "add" }); };
+    const openEdit = (w) => { setFormValues(w); setModal({ mode: "edit", id: w.id }); };
+    const submit = () => {
+        if (!formValues.assetId || !formValues.title)
+            return;
+        if (modal.mode === "add") {
+            const id = genId("WO", workOrders);
+            onChange([...workOrders, {
+                    id, status: "OPEN", createdDate: today(), completedDate: null, partsUsed: [], comments: [],
+                    ...formValues, reportedBy: formValues.reportedBy || currentUser.name,
+                }]);
+        }
+        else {
+            onChange(workOrders.map((w) => (w.id === modal.id ? { ...w, ...formValues } : w)));
+        }
+        setModal(null);
+    };
+    const remove = (id) => { onChange(workOrders.filter((w) => w.id !== id)); setDetail(null); };
+    const setStatus = (w, status) => {
+        onChange(workOrders.map((x) => (x.id === w.id ? { ...x, status } : x)));
+        setDetail((d) => (d && d.id === w.id ? { ...d, status } : d));
+    };
+    const addComment = (w) => {
+        if (!commentText.trim())
+            return;
+        const updated = { ...w, comments: [...(w.comments || []), { author: currentUser.name, date: today(), text: commentText.trim() }] };
+        onChange(workOrders.map((x) => (x.id === w.id ? updated : x)));
+        setDetail(updated);
+        setCommentText("");
+    };
+    const openComplete = (w) => { setCompleteParts([{ partId: "", qty: 1 }]); setCompleteError(""); setCompleteModal(w); };
+    const updateCompleteRow = (i, patch) => {
+        const c = [...completeParts];
+        c[i] = { ...c[i], ...patch };
+        setCompleteParts(c);
+        setCompleteError("");
+    };
+    const submitComplete = () => {
+        const validParts = completeParts.filter((r) => r.partId && Number(r.qty) > 0);
+        // Aggregate requested quantity per part, in case the same part is picked on multiple rows
+        const requested = {};
+        validParts.forEach((r) => {
+            requested[r.partId] = (requested[r.partId] || 0) + Number(r.qty);
+        });
+        const shortages = Object.entries(requested)
+            .map(([partId, qty]) => {
+            const part = spareParts.find((sp) => sp.id === partId);
+            return { name: part ? part.name : partId, unit: part?.unit || "", qty, available: part ? Number(part.quantity) : 0 };
+        })
+            .filter((s) => s.qty > s.available);
+        if (shortages.length > 0) {
+            setCompleteError("สต็อกไม่พอสำหรับ: " + shortages.map((s) => `${s.name} (ต้องการ ${s.qty} ${s.unit}, คงเหลือ ${s.available} ${s.unit})`).join(", "));
+            return;
+        }
+        setCompleteError("");
+        const updated = { ...completeModal, status: "DONE", completedDate: today(), partsUsed: Object.entries(requested).map(([partId, qty]) => ({ partId, qty })) };
+        onChange(workOrders.map((x) => (x.id === completeModal.id ? updated : x)));
+        if (Object.keys(requested).length > 0) {
+            const newParts = spareParts.map((sp) => {
+                const usedQty = requested[sp.id];
+                if (!usedQty)
+                    return sp;
+                return { ...sp, quantity: Number(sp.quantity) - usedQty };
+            });
+            onPartsChange(newParts);
+            // Every stock movement must show up in the receive/issue ledger, including
+            // parts consumed while closing a work order — so log one ISSUE txn per part.
+            let txnList = [...stockTxns];
+            const newTxns = [];
+            Object.entries(requested).forEach(([partId, qty]) => {
+                const part = spareParts.find((sp) => sp.id === partId);
+                const txn = {
+                    id: genId("ISS", txnList),
+                    type: "ISSUE",
+                    itemId: partId,
+                    itemName: part ? part.name : partId,
+                    qty,
+                    unit: part?.unit || "",
+                    unitPrice: Number(part?.unitPrice) || 0,
+                    date: today(),
+                    reference: completeModal.id,
+                    person: currentUser.name,
+                    department: currentUser.department || "",
+                    usageType: USAGE_TYPES[1],
+                    usageLocation: assetName(completeModal.assetId),
+                    recordedBy: currentUser.name,
+                    note: `เบิกใช้ปิดใบสั่งซ่อม ${completeModal.id}: ${completeModal.title}`,
+                };
+                newTxns.push(txn);
+                txnList = [...txnList, txn];
+            });
+            onTxnsChange(txnList);
+        }
+        setDetail(updated);
+        setCompleteModal(null);
+    };
+    const openEditComplete = (w) => {
+        const rows = w.partsUsed && w.partsUsed.length > 0 ? w.partsUsed.map((pu) => ({ partId: pu.partId, qty: pu.qty })) : [{ partId: "", qty: 1 }];
+        setEditCompleteParts(rows);
+        setEditCompleteDate(w.completedDate || today());
+        setEditCompleteError("");
+        setEditCompleteModal(w);
+    };
+    const submitEditComplete = () => {
+        const wo = editCompleteModal;
+        const validParts = editCompleteParts.filter((r) => r.partId && Number(r.qty) > 0);
+        const newRequested = {};
+        validParts.forEach((r) => { newRequested[r.partId] = (newRequested[r.partId] || 0) + Number(r.qty); });
+        const oldRequested = {};
+        (wo.partsUsed || []).forEach((pu) => { oldRequested[pu.partId] = (oldRequested[pu.partId] || 0) + Number(pu.qty); });
+        // Undo the original deduction first, so we can validate the corrected amounts against true available stock
+        const reverted = spareParts.map((sp) => {
+            const oldQty = oldRequested[sp.id];
+            return oldQty ? { ...sp, quantity: Number(sp.quantity) + oldQty } : sp;
+        });
+        const shortages = Object.entries(newRequested)
+            .map(([partId, qty]) => {
+            const part = reverted.find((sp) => sp.id === partId);
+            return { name: part ? part.name : partId, unit: part?.unit || "", qty, available: part ? Number(part.quantity) : 0 };
+        })
+            .filter((s) => s.qty > s.available);
+        if (shortages.length > 0) {
+            setEditCompleteError("สต็อกไม่พอสำหรับ: " + shortages.map((s) => `${s.name} (ต้องการ ${s.qty} ${s.unit}, คงเหลือ ${s.available} ${s.unit})`).join(", "));
+            return;
+        }
+        setEditCompleteError("");
+        const finalParts = reverted.map((sp) => {
+            const newQty = newRequested[sp.id];
+            return newQty ? { ...sp, quantity: Number(sp.quantity) - newQty } : sp;
+        });
+        onPartsChange(finalParts);
+        // Drop the ledger entries this work order originally logged, and write fresh ones matching the correction
+        const remainingTxns = stockTxns.filter((t) => !(t.type === "ISSUE" && t.reference === wo.id));
+        let txnList = [...remainingTxns];
+        Object.entries(newRequested).forEach(([partId, qty]) => {
+            const part = finalParts.find((sp) => sp.id === partId);
+            const txn = {
+                id: genId("ISS", txnList),
+                type: "ISSUE",
+                itemId: partId,
+                itemName: part ? part.name : partId,
+                qty,
+                unit: part?.unit || "",
+                unitPrice: Number(part?.unitPrice) || 0,
+                date: editCompleteDate || today(),
+                reference: wo.id,
+                person: currentUser.name,
+                department: currentUser.department || "",
+                usageType: USAGE_TYPES[1],
+                usageLocation: assetName(wo.assetId),
+                recordedBy: currentUser.name,
+                note: `แก้ไขข้อมูลเบิกอะไหล่ของใบสั่งซ่อม ${wo.id}: ${wo.title}`,
+            };
+            txnList = [...txnList, txn];
+        });
+        onTxnsChange(txnList);
+        const updatedWo = { ...wo, completedDate: editCompleteDate || today(), partsUsed: Object.entries(newRequested).map(([partId, qty]) => ({ partId, qty })) };
+        onChange(workOrders.map((x) => (x.id === wo.id ? updatedWo : x)));
+        setDetail(updatedWo);
+        setEditCompleteModal(null);
+    };
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar" },
+            React.createElement("div", { className: "search-box" },
+                React.createElement(Search, { size: 15 }),
+                React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D \u0E2B\u0E23\u0E37\u0E2D\u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C", value: query, onChange: (e) => setQuery(e.target.value) })),
+            React.createElement("select", { className: "select-filter", value: statusFilter, onChange: (e) => setStatusFilter(e.target.value) },
+                React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                Object.keys(WO_STATUS).map((k) => React.createElement("option", { key: k, value: k }, WO_STATUS[k]))),
+            React.createElement("div", { className: "spacer" }),
+            React.createElement("button", { className: "btn btn-primary", onClick: openAdd },
+                React.createElement(Plus, { size: 15 }),
+                " \u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21 / \u0E2A\u0E23\u0E49\u0E32\u0E07\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E07\u0E32\u0E19")),
+        React.createElement("div", { className: "panel" }, filtered.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21" })) : (React.createElement("div", { className: "table-wrap" },
+            React.createElement("table", { className: "data-table" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48"),
+                        React.createElement("th", null, "\u0E07\u0E32\u0E19"),
+                        React.createElement("th", null, "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                        React.createElement("th", null, "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D"),
+                        React.createElement("th", null, "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A"),
+                        React.createElement("th", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07"),
+                        React.createElement("th", null, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, filtered.map((w) => (React.createElement("tr", { key: w.id, className: "row-clickable", onClick: () => setDetail(w) },
+                    React.createElement("td", { className: "mono" }, w.id),
+                    React.createElement("td", null,
+                        React.createElement("div", { className: "cell-primary" }, w.title),
+                        React.createElement("div", { className: "cell-sub" }, WO_TYPE[w.type])),
+                    React.createElement("td", null, assetName(w.assetId)),
+                    React.createElement("td", null,
+                        React.createElement(Badge, { text: PRIORITY[w.priority], tone: toneMap.priority[w.priority] })),
+                    React.createElement("td", null, w.assignedTo || "-"),
+                    React.createElement("td", null, formatDate(w.createdDate)),
+                    React.createElement("td", null,
+                        React.createElement(Badge, { text: WO_STATUS[w.status], tone: toneMap.wo[w.status] })),
+                    React.createElement("td", { onClick: (e) => e.stopPropagation() }, canManage && (React.createElement("div", { className: "row-actions" },
+                        React.createElement("button", { className: "icon-btn", onClick: () => openEdit(w) },
+                            React.createElement(Edit2, { size: 14 })),
+                        React.createElement("button", { className: "icon-btn", onClick: () => remove(w.id) },
+                            React.createElement(Trash2, { size: 14 }))))))))))))),
+        modal && (React.createElement(Modal, { title: modal.mode === "add" ? "แจ้งซ่อม / สร้างใบสั่งงาน" : "แก้ไขใบสั่งซ่อม", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submit },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+        detail && (React.createElement(Modal, { title: detail.title, onClose: () => setDetail(null), wide: true },
+            React.createElement("div", { className: "detail-grid" },
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
+                    React.createElement("div", { className: "v mono" }, detail.id)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                    React.createElement("div", { className: "v" },
+                        React.createElement(Badge, { text: WO_STATUS[detail.status], tone: toneMap.wo[detail.status] }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
+                    React.createElement("div", { className: "v" }, assetName(detail.assetId))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E07\u0E32\u0E19"),
+                    React.createElement("div", { className: "v" }, WO_TYPE[detail.type])),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D"),
+                    React.createElement("div", { className: "v" },
+                        React.createElement(Badge, { text: PRIORITY[detail.priority], tone: toneMap.priority[detail.priority] }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E34\u0E14\u0E0A\u0E2D\u0E1A"),
+                    React.createElement("div", { className: "v" }, detail.assignedTo || "-")),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E1C\u0E39\u0E49\u0E41\u0E08\u0E49\u0E07"),
+                    React.createElement("div", { className: "v" }, detail.reportedBy)),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07"),
+                    React.createElement("div", { className: "v" }, formatDate(detail.createdDate))),
+                detail.completedDate && React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19"),
+                    React.createElement("div", { className: "v" }, formatDate(detail.completedDate)))),
+            detail.description && React.createElement("p", { style: { fontSize: 13.5, color: "var(--text-secondary)", marginBottom: 16 } }, detail.description),
+            detail.partsUsed && detail.partsUsed.length > 0 && (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "panel-title", style: { marginBottom: 8 } }, "\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49"),
+                detail.partsUsed.map((pu, i) => {
+                    const part = spareParts.find((sp) => sp.id === pu.partId);
+                    return React.createElement("div", { key: i, style: { fontSize: 13.5, padding: "4px 0" } },
+                        part ? part.name : pu.partId,
+                        " \u0E08\u0E33\u0E19\u0E27\u0E19 ",
+                        pu.qty,
+                        " ",
+                        part?.unit || "");
+                }))),
+            React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", margin: "16px 0" } },
+                detail.status === "OPEN" && React.createElement("button", { className: "btn btn-outline", onClick: () => setStatus(detail, "INPROGRESS") }, "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23"),
+                (detail.status === "OPEN" || detail.status === "INPROGRESS") && React.createElement("button", { className: "btn btn-primary", onClick: () => openComplete(detail) },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19"),
+                React.createElement("button", { className: "btn btn-outline", onClick: () => onPrint("wo", detail) },
+                    React.createElement(Printer, { size: 14 }),
+                    " \u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21")),
+            React.createElement("div", { className: "panel-title", style: { margin: "18px 0 8px" } }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E27\u0E32\u0E21\u0E04\u0E37\u0E1A\u0E2B\u0E19\u0E49\u0E32"),
+            (detail.comments || []).length === 0 && React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01" }),
+            (detail.comments || []).map((c, i) => (React.createElement("div", { className: "comment", key: i },
+                React.createElement("div", { className: "meta" },
+                    "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E42\u0E14\u0E22 ",
+                    c.author,
+                    " \u0E40\u0E21\u0E37\u0E48\u0E2D ",
+                    formatDate(c.date)),
+                React.createElement("div", { className: "txt" }, c.text)))),
+            React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10 } },
+                React.createElement("input", { style: { flex: 1, background: "var(--bg-input)", border: "1px solid var(--border-steel)", borderRadius: 6, padding: "9px 10px", color: "var(--text-primary)", fontSize: 13.5, fontFamily: "inherit" }, placeholder: "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E27\u0E32\u0E21\u0E04\u0E37\u0E1A\u0E2B\u0E19\u0E49\u0E32...", value: commentText, onChange: (e) => setCommentText(e.target.value), onKeyDown: (e) => { if (e.key === "Enter")
+                        addComment(detail); } }),
+                React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => addComment(detail) },
+                    React.createElement(MessageSquare, { size: 14 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")),
+            canManage && (React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" } },
+                React.createElement("button", { className: "btn btn-outline", onClick: () => { openEdit(detail); setDetail(null); } },
+                    React.createElement(Edit2, { size: 14 }),
+                    " \u0E41\u0E01\u0E49\u0E44\u0E02"),
+                detail.status === "DONE" && (React.createElement("button", { className: "btn btn-outline", onClick: () => openEditComplete(detail) },
+                    React.createElement(Edit2, { size: 14 }),
+                    " \u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19")),
+                React.createElement("button", { className: "btn btn-danger", onClick: () => remove(detail.id) },
+                    React.createElement(Trash2, { size: 14 }),
+                    " \u0E25\u0E1A\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21"))))),
+        completeModal && (React.createElement(Modal, { title: `ปิดงาน: ${completeModal.title}`, onClose: () => { setCompleteModal(null); setCompleteError(""); }, wide: true, footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => { setCompleteModal(null); setCompleteError(""); } }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitComplete },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19")) },
+            React.createElement("p", { style: { fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 } }, "\u0E23\u0E30\u0E1A\u0E38\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E35\u0E48\u0E40\u0E1A\u0E34\u0E01\u0E43\u0E0A\u0E49\u0E43\u0E19\u0E07\u0E32\u0E19\u0E19\u0E35\u0E49 (\u0E16\u0E49\u0E32\u0E21\u0E35) \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E15\u0E31\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E2B\u0E32\u0E01\u0E2A\u0E15\u0E47\u0E2D\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E2D\u0E08\u0E30\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49 \u0E43\u0E2B\u0E49\u0E25\u0E14\u0E08\u0E33\u0E19\u0E27\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48\u0E41\u0E17\u0E19"),
+            completeParts.map((row, i) => (React.createElement("div", { className: "parts-row", key: i },
+                React.createElement(SearchSelect, { value: row.partId, onChange: (v) => updateCompleteRow(i, { partId: v }), options: spareParts, getValue: (sp) => sp.id, getLabel: (sp) => `${sp.name} (คงเหลือ ${sp.quantity} ${sp.unit})`, placeholder: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48...", emptyLabel: "\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48 / \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48" }),
+                React.createElement("input", { type: "number", min: "1", value: row.qty, onChange: (e) => updateCompleteRow(i, { qty: e.target.value }) }),
+                React.createElement("button", { className: "icon-btn", onClick: () => { setCompleteParts(completeParts.filter((_, idx) => idx !== i)); setCompleteError(""); } },
+                    React.createElement(X, { size: 14 }))))),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setCompleteParts([...completeParts, { partId: "", qty: 1 }]) },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48"),
+            completeError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
+                React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, completeError))))),
+        editCompleteModal && (React.createElement(Modal, { title: `แก้ไขข้อมูลปิดงาน: ${editCompleteModal.title}`, onClose: () => { setEditCompleteModal(null); setEditCompleteError(""); }, wide: true, footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => { setEditCompleteModal(null); setEditCompleteError(""); } }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitEditComplete },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02")) },
+            React.createElement("div", { className: "field", style: { marginBottom: 16, maxWidth: 220 } },
+                React.createElement("label", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19"),
+                React.createElement("input", { type: "date", value: editCompleteDate, onChange: (e) => setEditCompleteDate(e.target.value) })),
+            React.createElement("p", { style: { fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 } }, "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E08\u0E23\u0E34\u0E07 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E04\u0E37\u0E19\u0E2A\u0E15\u0E47\u0E2D\u0E01\u0E40\u0E14\u0E34\u0E21\u0E41\u0E25\u0E30\u0E15\u0E31\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E41\u0E01\u0E49\u0E44\u0E02 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E1B\u0E23\u0E31\u0E1A\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32-\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07\u0E01\u0E31\u0E19\u0E14\u0E49\u0E27\u0E22"),
+            editCompleteParts.map((row, i) => (React.createElement("div", { className: "parts-row", key: i },
+                React.createElement(SearchSelect, { value: row.partId, onChange: (v) => { const c = [...editCompleteParts]; c[i] = { ...c[i], partId: v }; setEditCompleteParts(c); setEditCompleteError(""); }, options: spareParts, getValue: (sp) => sp.id, getLabel: (sp) => `${sp.name} (คงเหลือ ${sp.quantity} ${sp.unit})`, placeholder: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48...", emptyLabel: "\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48 / \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48" }),
+                React.createElement("input", { type: "number", min: "1", value: row.qty, onChange: (e) => { const c = [...editCompleteParts]; c[i] = { ...c[i], qty: e.target.value }; setEditCompleteParts(c); setEditCompleteError(""); } }),
+                React.createElement("button", { className: "icon-btn", onClick: () => { setEditCompleteParts(editCompleteParts.filter((_, idx) => idx !== i)); setEditCompleteError(""); } },
+                    React.createElement(X, { size: 14 }))))),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setEditCompleteParts([...editCompleteParts, { partId: "", qty: 1 }]) },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48"),
+            editCompleteError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
+                React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, editCompleteError)))))));
+}
+/* ------------------------------------------------------------------------ */
+/* inventory (items + receive/issue ledger)                                   */
+/* ------------------------------------------------------------------------ */
+function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChange, onTxnsAdd, onPrint }) {
+    const [subView, setSubView] = useState("items");
+    const [query, setQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [categoryFilter, setCategoryFilter] = useState("");
+    const [txnFilter, setTxnFilter] = useState("");
+    const [monthFilter, setMonthFilter] = useState("");
+    const [modal, setModal] = useState(null);
+    const [formValues, setFormValues] = useState({});
+    const [receiveModal, setReceiveModal] = useState(false);
+    const [receiveForm, setReceiveForm] = useState({});
+    const [issueModal, setIssueModal] = useState(false);
+    const [issueForm, setIssueForm] = useState({});
+    const [imagePreview, setImagePreview] = useState(null);
+    const handleImageFile = (file) => {
+        if (!file)
+            return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = () => {
+                const maxW = 480;
+                const scale = Math.min(1, maxW / img.width);
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+                setFormValues((v) => ({ ...v, imageUrl: dataUrl }));
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
+    const fields = [
+        { key: "name", label: "ชื่อพัสดุ", type: "text", required: true, wide: true },
+        { key: "code", label: "รหัสพัสดุ", type: "text" },
+        { key: "category", label: "หมวดหมู่", type: "select", options: PART_CATEGORIES },
+        { key: "quantity", label: "จำนวนคงเหลือ", type: "number", required: true },
+        { key: "minStock", label: "จุดสั่งซื้อขั้นต่ำ", type: "number" },
+        { key: "unit", label: "หน่วยนับ", type: "select", options: UNIT_OPTIONS },
+        { key: "location", label: "ตำแหน่งจัดเก็บ", type: "select", options: LOCATION_OPTIONS, wide: true },
+        { key: "unitPrice", label: "ราคาต่อหน่วย (บาท)", type: "number" },
+    ];
+    const statusLabel = { ok: "ปกติ", low: "ใกล้หมด", out: "หมดสต็อก" };
+    const withStatus = spareParts.map((p) => ({ ...p, _status: partStatusOf(p) }));
+    const filteredItems = withStatus.filter((p) => {
+        const q = query.toLowerCase();
+        const matchQ = !query || p.name.toLowerCase().includes(q) || (p.code || "").toLowerCase().includes(q);
+        const matchS = !statusFilter || p._status === statusFilter;
+        const matchC = !categoryFilter || p.category === categoryFilter;
+        return matchQ && matchS && matchC;
+    });
+    const openAdd = () => { setFormValues({ quantity: 0, minStock: 1 }); setModal({ mode: "add" }); };
+    const openEdit = (p) => { setFormValues(p); setModal({ mode: "edit", id: p.id }); };
+    const submitItem = () => {
+        if (!formValues.name)
+            return;
+        const record = { ...formValues, quantity: Number(formValues.quantity) || 0, minStock: Number(formValues.minStock) || 0, unitPrice: Number(formValues.unitPrice) || 0 };
+        if (modal.mode === "add") {
+            const id = genId("SP", spareParts);
+            onItemsChange([...spareParts, { id, ...record }]);
+        }
+        else {
+            onItemsChange(spareParts.map((p) => (p.id === modal.id ? { ...p, ...record } : p)));
+        }
+        setModal(null);
+    };
+    const removeItem = (id) => onItemsChange(spareParts.filter((p) => p.id !== id));
+    const openReceive = (presetItemId) => {
+        setReceiveForm({ itemId: presetItemId || "", qty: 1, date: today(), person: "", reference: "", note: "" });
+        setReceiveModal(true);
+    };
+    const submitReceive = () => {
+        const item = spareParts.find((p) => p.id === receiveForm.itemId);
+        if (!item || !receiveForm.qty)
+            return;
+        const qty = Number(receiveForm.qty);
+        onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Number(p.quantity) + qty } : p)));
+        const txn = {
+            id: genId("RCV", stockTxns), type: "RECEIVE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            unitPrice: Number(item.unitPrice) || 0,
+            date: receiveForm.date || today(), reference: receiveForm.reference, person: receiveForm.person,
+            receivedBy: currentUser.name, note: receiveForm.note,
+        };
+        onTxnsAdd([txn]);
+        setReceiveModal(false);
+        onPrint("receive", txn);
+    };
+    const openIssue = (presetItemId) => {
+        setIssueForm({ itemId: presetItemId || "", qty: 1, date: today(), person: currentUser.name, department: "", usageType: USAGE_TYPES[0], usageLocation: "", reference: "", note: "" });
+        setIssueModal(true);
+    };
+    const submitIssue = () => {
+        const item = spareParts.find((p) => p.id === issueForm.itemId);
+        if (!item || !issueForm.qty)
+            return;
+        const qty = Number(issueForm.qty);
+        onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Math.max(0, Number(p.quantity) - qty) } : p)));
+        const txn = {
+            id: genId("ISS", stockTxns), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            unitPrice: Number(item.unitPrice) || 0,
+            date: issueForm.date || today(), reference: issueForm.reference, person: issueForm.person,
+            department: issueForm.department, usageType: issueForm.usageType, usageLocation: issueForm.usageLocation,
+            recordedBy: currentUser.name, note: issueForm.note,
+        };
+        onTxnsAdd([txn]);
+        setIssueModal(false);
+        onPrint("issue", txn);
+    };
+    const sortedTxns = [...stockTxns]
+        .filter((t) => !txnFilter || t.type === txnFilter)
+        .filter((t) => !monthFilter || (t.date || "").slice(0, 7) === monthFilter)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const exportHistoryExcel = () => {
+        const rows = sortedTxns.map((t) => ({
+            "เลขที่": t.id,
+            "ประเภท": TXN_TYPE[t.type],
+            "รายการ": t.itemName,
+            "จำนวน": t.qty,
+            "หน่วย": t.unit,
+            "วันที่": formatDate(t.date),
+            "ผู้ดำเนินการ": t.type === "RECEIVE" ? t.receivedBy : t.recordedBy,
+            "แผนก": t.department || "",
+            "อ้างอิง": t.reference || "",
+            "ราคาต่อหน่วย": Number(t.unitPrice || 0),
+            "มูลค่ารวม": Number(t.unitPrice || 0) * Number(t.qty || 0),
+            "หมายเหตุ": t.note || "",
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws["!cols"] = [{ wch: 12 }, { wch: 10 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "ประวัติรับเข้า-เบิกออก");
+        const label = monthFilter || "ทั้งหมด";
+        XLSX.writeFile(wb, `ประวัติรับเข้า-เบิกออก_${label}.xlsx`);
+    };
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar" },
+            React.createElement("button", { className: `btn btn-sm ${subView === "items" ? "btn-outline" : "btn-ghost"}`, onClick: () => setSubView("items") }, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+            React.createElement("button", { className: `btn btn-sm ${subView === "history" ? "btn-outline" : "btn-ghost"}`, onClick: () => setSubView("history") }, "\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32-\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01"),
+            subView === "items" ? (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "search-box" },
+                    React.createElement(Search, { size: 15 }),
+                    React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E0A\u0E37\u0E48\u0E2D \u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38", value: query, onChange: (e) => setQuery(e.target.value) })),
+                React.createElement("select", { className: "select-filter", value: statusFilter, onChange: (e) => setStatusFilter(e.target.value) },
+                    React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                    React.createElement("option", { value: "ok" }, "\u0E1B\u0E01\u0E15\u0E34"),
+                    React.createElement("option", { value: "low" }, "\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14"),
+                    React.createElement("option", { value: "out" }, "\u0E2B\u0E21\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01")),
+                React.createElement("select", { className: "select-filter", value: categoryFilter, onChange: (e) => setCategoryFilter(e.target.value) },
+                    React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
+                    PART_CATEGORIES.map((c) => React.createElement("option", { key: c, value: c }, c))))) : (React.createElement(React.Fragment, null,
+                React.createElement("select", { className: "select-filter", value: txnFilter, onChange: (e) => setTxnFilter(e.target.value) },
+                    React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                    React.createElement("option", { value: "RECEIVE" }, "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
+                    React.createElement("option", { value: "ISSUE" }, "\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01")),
+                React.createElement("input", { type: "month", className: "select-filter", value: monthFilter, onChange: (e) => setMonthFilter(e.target.value) }),
+                monthFilter && React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setMonthFilter("") }, "\u0E25\u0E49\u0E32\u0E07\u0E40\u0E14\u0E37\u0E2D\u0E19"))),
+            React.createElement("div", { className: "spacer" }),
+            subView === "history" && (React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportHistoryExcel, disabled: sortedTxns.length === 0 },
+                React.createElement(Download, { size: 14 }),
+                " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel")),
+            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openIssue() },
+                React.createElement(ArrowUpCircle, { size: 14 }),
+                " \u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01"),
+            canEdit && React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openReceive() },
+                React.createElement(ArrowDownCircle, { size: 14 }),
+                " \u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
+            canEdit && subView === "items" && React.createElement("button", { className: "btn btn-primary btn-sm", onClick: openAdd },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E1E\u0E31\u0E2A\u0E14\u0E38")),
+        subView === "items" ? (React.createElement("div", { className: "panel" }, filteredItems.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32" })) : (React.createElement("div", { className: "table-wrap" },
+            React.createElement("table", { className: "data-table" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "\u0E23\u0E2B\u0E31\u0E2A"),
+                        React.createElement("th", null, "\u0E0A\u0E37\u0E48\u0E2D\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("th", null, "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
+                        React.createElement("th", null, "\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D"),
+                        React.createElement("th", null, "\u0E08\u0E38\u0E14\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E37\u0E49\u0E2D\u0E02\u0E31\u0E49\u0E19\u0E15\u0E48\u0E33"),
+                        React.createElement("th", null, "\u0E17\u0E35\u0E48\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A"),
+                        React.createElement("th", null, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, filteredItems.map((p) => (React.createElement("tr", { key: p.id },
+                    React.createElement("td", { className: "mono" }, p.code || p.id),
+                    React.createElement("td", null,
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                            p.imageUrl ? (React.createElement("img", { src: p.imageUrl, alt: "", title: "\u0E04\u0E25\u0E34\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E23\u0E39\u0E1B\u0E02\u0E22\u0E32\u0E22", className: "item-thumb", style: { width: 34, height: 34, objectFit: "cover", borderRadius: 4, border: "1px solid var(--border-steel)", flexShrink: 0 }, onClick: () => setImagePreview(p) })) : (React.createElement("div", { style: { width: 34, height: 34, borderRadius: 4, background: "var(--bg-input)", border: "1px solid var(--border-steel)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" } },
+                                React.createElement(ImageIcon, { size: 14, color: "var(--text-tertiary)" }))),
+                            React.createElement("span", { className: "cell-primary" }, p.name))),
+                    React.createElement("td", null, p.category),
+                    React.createElement("td", { className: "mono" },
+                        p.quantity,
+                        " ",
+                        p.unit),
+                    React.createElement("td", null,
+                        p.minStock,
+                        " ",
+                        p.unit),
+                    React.createElement("td", null, p.location),
+                    React.createElement("td", null,
+                        React.createElement(Badge, { text: statusLabel[p._status], tone: toneMap.part[p._status] })),
+                    React.createElement("td", null,
+                        React.createElement("div", { className: "row-actions" },
+                            React.createElement("button", { className: "icon-btn", title: "\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01", onClick: () => openIssue(p.id) },
+                                React.createElement(ArrowUpCircle, { size: 14 })),
+                            canEdit && React.createElement("button", { className: "icon-btn", title: "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32", onClick: () => openReceive(p.id) },
+                                React.createElement(ArrowDownCircle, { size: 14 })),
+                            canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
+                                React.createElement(Edit2, { size: 14 })),
+                            canEdit && React.createElement("button", { className: "icon-btn", onClick: () => removeItem(p.id) },
+                                React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E1E\u0E31\u0E2A\u0E14\u0E38" })) : (React.createElement("div", { className: "table-wrap" },
+            React.createElement("table", { className: "data-table" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48"),
+                        React.createElement("th", null, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                        React.createElement("th", null, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"),
+                        React.createElement("th", null, "\u0E08\u0E33\u0E19\u0E27\u0E19"),
+                        React.createElement("th", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"),
+                        React.createElement("th", null, "\u0E1C\u0E39\u0E49\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23"),
+                        React.createElement("th", null, "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, sortedTxns.map((t) => (React.createElement("tr", { key: t.id },
+                    React.createElement("td", { className: "mono" }, t.id),
+                    React.createElement("td", null,
+                        React.createElement(Badge, { text: TXN_TYPE[t.type], tone: t.type === "RECEIVE" ? "good" : "warn" })),
+                    React.createElement("td", null, t.itemName),
+                    React.createElement("td", { className: "mono" },
+                        t.qty,
+                        " ",
+                        t.unit),
+                    React.createElement("td", null, formatDate(t.date)),
+                    React.createElement("td", null, t.type === "RECEIVE" ? t.receivedBy : t.recordedBy),
+                    React.createElement("td", null, t.reference || "-"),
+                    React.createElement("td", null,
+                        React.createElement("button", { className: "icon-btn", onClick: () => onPrint(t.type === "RECEIVE" ? "receive" : "issue", t) },
+                            React.createElement(Printer, { size: 14 })))))))))))),
+        modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มพัสดุใหม่" : "แก้ไขข้อมูลพัสดุ", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitItem },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            React.createElement("div", { className: "field field-wide", style: { marginBottom: 14 } },
+                React.createElement("label", null, "\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+                    formValues.imageUrl ? (React.createElement("img", { src: formValues.imageUrl, alt: "", title: "\u0E04\u0E25\u0E34\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E23\u0E39\u0E1B\u0E02\u0E22\u0E32\u0E22", className: "item-thumb", style: { width: 72, height: 72, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-steel)", flexShrink: 0 }, onClick: () => setImagePreview({ name: formValues.name || "รูปภาพพัสดุ", imageUrl: formValues.imageUrl }) })) : (React.createElement("div", { style: { width: 72, height: 72, borderRadius: 6, border: "1px dashed var(--border-steel-light)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+                        React.createElement(ImageIcon, { size: 22, color: "var(--text-tertiary)" }))),
+                    React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+                        React.createElement("label", { className: "btn btn-outline btn-sm", style: { cursor: "pointer" } },
+                            React.createElement(ImagePlus, { size: 14 }),
+                            " ",
+                            formValues.imageUrl ? "เปลี่ยนรูป" : "แนบรูปภาพ",
+                            React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: (e) => handleImageFile(e.target.files[0]) })),
+                        formValues.imageUrl && (React.createElement("button", { type: "button", className: "btn btn-ghost btn-sm", onClick: () => setFormValues({ ...formValues, imageUrl: "" }) }, "\u0E25\u0E1A\u0E23\u0E39\u0E1B"))))),
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+        receiveModal && (React.createElement(Modal, { title: "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32\u0E1E\u0E31\u0E2A\u0E14\u0E38", onClose: () => setReceiveModal(false), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setReceiveModal(false) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitReceive },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32")) },
+            React.createElement("div", { className: "form-grid" },
+                React.createElement("div", { className: "field field-wide" },
+                    React.createElement("label", null,
+                        "\u0E1E\u0E31\u0E2A\u0E14\u0E38",
+                        React.createElement("span", { className: "req" }, "*")),
+                    React.createElement(SearchSelect, { value: receiveForm.itemId || "", onChange: (v) => setReceiveForm({ ...receiveForm, itemId: v }), options: spareParts, getValue: (sp) => sp.id, getLabel: (sp) => `${sp.name} (คงเหลือ ${sp.quantity} ${sp.unit})`, placeholder: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E1E\u0E31\u0E2A\u0E14\u0E38..." })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null,
+                        "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32",
+                        React.createElement("span", { className: "req" }, "*")),
+                    React.createElement("input", { type: "number", min: "1", value: receiveForm.qty ?? "", onChange: (e) => setReceiveForm({ ...receiveForm, qty: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
+                    React.createElement("input", { type: "date", value: receiveForm.date || "", onChange: (e) => setReceiveForm({ ...receiveForm, date: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E40\u0E0A\u0E48\u0E19 \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07/\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E37\u0E49\u0E2D)"),
+                    React.createElement("input", { type: "text", value: receiveForm.reference || "", onChange: (e) => setReceiveForm({ ...receiveForm, reference: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32/\u0E1C\u0E39\u0E49\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07"),
+                    React.createElement("input", { type: "text", value: receiveForm.person || "", onChange: (e) => setReceiveForm({ ...receiveForm, person: e.target.value }) })),
+                React.createElement("div", { className: "field field-wide" },
+                    React.createElement("label", null, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"),
+                    React.createElement("textarea", { rows: 2, value: receiveForm.note || "", onChange: (e) => setReceiveForm({ ...receiveForm, note: e.target.value }) }))))),
+        issueModal && (React.createElement(Modal, { title: "\u0E40\u0E1A\u0E34\u0E01\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E2D\u0E2D\u0E01", onClose: () => setIssueModal(false), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setIssueModal(false) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitIssue },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01")) },
+            React.createElement("div", { className: "form-grid" },
+                React.createElement("div", { className: "field field-wide" },
+                    React.createElement("label", null,
+                        "\u0E1E\u0E31\u0E2A\u0E14\u0E38",
+                        React.createElement("span", { className: "req" }, "*")),
+                    React.createElement(SearchSelect, { value: issueForm.itemId || "", onChange: (v) => setIssueForm({ ...issueForm, itemId: v }), options: spareParts, getValue: (sp) => sp.id, getLabel: (sp) => `${sp.name} (คงเหลือ ${sp.quantity} ${sp.unit})`, placeholder: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E1E\u0E31\u0E2A\u0E14\u0E38..." })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null,
+                        "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E17\u0E35\u0E48\u0E40\u0E1A\u0E34\u0E01",
+                        React.createElement("span", { className: "req" }, "*")),
+                    React.createElement("input", { type: "number", min: "1", value: issueForm.qty ?? "", onChange: (e) => setIssueForm({ ...issueForm, qty: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E1A\u0E34\u0E01"),
+                    React.createElement("input", { type: "date", value: issueForm.date || "", onChange: (e) => setIssueForm({ ...issueForm, date: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E1C\u0E39\u0E49\u0E40\u0E1A\u0E34\u0E01"),
+                    React.createElement("input", { type: "text", value: issueForm.person || "", onChange: (e) => setIssueForm({ ...issueForm, person: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E41\u0E1C\u0E19\u0E01"),
+                    React.createElement("select", { value: issueForm.department || "", onChange: (e) => setIssueForm({ ...issueForm, department: e.target.value }) },
+                        React.createElement("option", { value: "" }, "-- \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19 --"),
+                        DEPARTMENT_OPTIONS.map((d) => React.createElement("option", { key: d, value: d }, d)))),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"),
+                    React.createElement("select", { value: issueForm.usageType || "", onChange: (e) => setIssueForm({ ...issueForm, usageType: e.target.value }) }, USAGE_TYPES.map((t) => React.createElement("option", { key: t, value: t }, t)))),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E08\u0E38\u0E14\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"),
+                    React.createElement("input", { type: "text", placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E44\u0E25\u0E19\u0E4C\u0E1C\u0E25\u0E34\u0E15 1, \u0E40\u0E04\u0E23\u0E19\u0E04\u0E25\u0E31\u0E07 B", value: issueForm.usageLocation || "", onChange: (e) => setIssueForm({ ...issueForm, usageLocation: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E40\u0E0A\u0E48\u0E19 \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21)"),
+                    React.createElement("input", { type: "text", value: issueForm.reference || "", onChange: (e) => setIssueForm({ ...issueForm, reference: e.target.value }) })),
+                React.createElement("div", { className: "field field-wide" },
+                    React.createElement("label", null, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"),
+                    React.createElement("textarea", { rows: 2, value: issueForm.note || "", onChange: (e) => setIssueForm({ ...issueForm, note: e.target.value }) }))))),
+        imagePreview && (React.createElement(Modal, { title: imagePreview.name, onClose: () => setImagePreview(null) },
+            React.createElement("img", { src: imagePreview.imageUrl, alt: imagePreview.name, style: { width: "100%", borderRadius: 8, display: "block" } })))));
+}
+/* ------------------------------------------------------------------------ */
+/* users                                                                       */
+/* ------------------------------------------------------------------------ */
+function UsersTab({ users, onChange }) {
+    const [modal, setModal] = useState(null);
+    const [formValues, setFormValues] = useState({});
+    const fields = [
+        { key: "name", label: "ชื่อ-นามสกุล", type: "text", required: true, wide: true },
+        { key: "role", label: "บทบาท", type: "select", options: Object.keys(ROLES), optionLabels: ROLES },
+        { key: "department", label: "แผนก", type: "text" },
+    ];
+    const openAdd = () => { setFormValues({ role: "MAINTENANCE" }); setModal({ mode: "add" }); };
+    const openEdit = (u) => { setFormValues(u); setModal({ mode: "edit", id: u.id }); };
+    const submit = () => {
+        if (!formValues.name)
+            return;
+        if (modal.mode === "add") {
+            const id = genId("USR", users);
+            onChange([...users, { id, ...formValues }]);
+        }
+        else {
+            onChange(users.map((u) => (u.id === modal.id ? { ...u, ...formValues } : u)));
+        }
+        setModal(null);
+    };
+    const remove = (id) => {
+        if (users.length <= 1)
+            return;
+        onChange(users.filter((u) => u.id !== id));
+    };
+    const roleTone = (role) => (role === "ADMIN" ? "warn" : role === "MAINTENANCE" ? "good" : "neutral");
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar" },
+            React.createElement("div", { className: "spacer" }),
+            React.createElement("button", { className: "btn btn-primary", onClick: openAdd },
+                React.createElement(Plus, { size: 15 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19")),
+        React.createElement("div", { className: "panel" },
+            React.createElement("div", { className: "table-wrap" },
+                React.createElement("table", { className: "data-table" },
+                    React.createElement("thead", null,
+                        React.createElement("tr", null,
+                            React.createElement("th", null, "\u0E23\u0E2B\u0E31\u0E2A"),
+                            React.createElement("th", null, "\u0E0A\u0E37\u0E48\u0E2D"),
+                            React.createElement("th", null, "\u0E1A\u0E17\u0E1A\u0E32\u0E17"),
+                            React.createElement("th", null, "\u0E41\u0E1C\u0E19\u0E01"),
+                            React.createElement("th", null, "\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E40\u0E02\u0E49\u0E32\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49"),
+                            React.createElement("th", null))),
+                    React.createElement("tbody", null, users.map((u) => (React.createElement("tr", { key: u.id },
+                        React.createElement("td", { className: "mono" }, u.id),
+                        React.createElement("td", { className: "cell-primary" }, u.name),
+                        React.createElement("td", null,
+                            React.createElement(Badge, { text: ROLES[u.role], tone: roleTone(u.role) })),
+                        React.createElement("td", null, u.department),
+                        React.createElement("td", { style: { fontSize: 12.5, color: "var(--text-secondary)" } }, (ROLE_PAGES[u.role] || []).map((p) => NAV_ITEMS.find((n) => n.key === p)?.label).filter(Boolean).join(", ") || "-"),
+                        React.createElement("td", null,
+                            React.createElement("div", { className: "row-actions" },
+                                React.createElement("button", { className: "icon-btn", onClick: () => openEdit(u) },
+                                    React.createElement(Edit2, { size: 14 })),
+                                React.createElement("button", { className: "icon-btn", onClick: () => remove(u.id) },
+                                    React.createElement(Trash2, { size: 14 }))))))))))),
+        modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มผู้ใช้งาน" : "แก้ไขผู้ใช้งาน", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submit },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) })))));
+}
+/* ------------------------------------------------------------------------ */
+/* app                                                                         */
+/* ------------------------------------------------------------------------ */
+export default function App() {
+    const [users, updateUsers, usersLoading] = useFirestoreCollection("users", seedUsers);
+    const [assets, updateAssets, assetsLoading] = useFirestoreCollection("assets", seedAssets);
+    const [pmSchedules, updatePm, pmLoading] = useFirestoreCollection("pm-schedules", seedPmSchedules);
+    const [workOrders, updateWo, woLoading] = useFirestoreCollection("work-orders", seedWorkOrders);
+    const [spareParts, updateParts, partsLoading] = useFirestoreCollection("spare-parts", seedSpareParts);
+    const [stockTxns, updateStockTxns, txnsLoading] = useFirestoreCollection("stock-txns", seedStockTxns);
+    const loading = usersLoading || assetsLoading || pmLoading || woLoading || partsLoading || txnsLoading;
+    const [currentUser, setCurrentUser] = useState(null);
+    const [activeTab, setActiveTab] = useState("dashboard");
+    const [confirmReset, setConfirmReset] = useState(false);
+    const [printDoc, setPrintDoc] = useState(null);
+    const [theme, setTheme] = useState("dark");
+    // Dark/light mode is a per-browser preference, not shared data, so it stays
+    // in this browser's own localStorage rather than in Firestore.
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem("ui-theme");
+            if (saved === "light" || saved === "dark")
+                setTheme(saved);
+        }
+        catch (e) {
+            /* no saved preference yet — keep default */
+        }
+    }, []);
+    const toggleTheme = () => {
+        const next = theme === "dark" ? "light" : "dark";
+        setTheme(next);
+        try {
+            localStorage.setItem("ui-theme", next);
+        }
+        catch (e) { /* ignore */ }
+    };
+    const addStockTxns = (newOnes) => updateStockTxns([...stockTxns, ...newOnes]);
+    const logWorkOrder = (partial) => {
+        const id = genId("WO", workOrders);
+        updateWo([...workOrders, { id, ...partial }]);
+    };
+    const openPrint = (type, data) => setPrintDoc({ type, data, printedAt: new Date() });
+    const doReset = () => {
+        updateUsers(seedUsers());
+        updateAssets(seedAssets());
+        updatePm(seedPmSchedules());
+        updateWo(seedWorkOrders());
+        updateParts(seedSpareParts());
+        updateStockTxns(seedStockTxns());
+        setConfirmReset(false);
+    };
+    if (loading) {
+        return (React.createElement("div", { className: "cmms-root", "data-theme": theme, style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" } },
+            React.createElement("style", null, STYLE),
+            React.createElement("div", { style: { color: "var(--text-secondary)", fontSize: 14 } }, "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E42\u0E2B\u0E25\u0E14\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E30\u0E1A\u0E1A...")));
+    }
+    if (!currentUser) {
+        return (React.createElement("div", { className: "cmms-root", "data-theme": theme },
+            React.createElement("style", null, STYLE),
+            React.createElement(LoginScreen, { users: users, theme: theme, onToggleTheme: toggleTheme, onLogin: (u) => {
+                    setCurrentUser(u);
+                    setActiveTab((ROLE_PAGES[u.role] || ["dashboard"])[0]);
+                } })));
+    }
+    const role = currentUser.role;
+    const isAdmin = role === "ADMIN";
+    // Access is page-level: if a role can open a page, it can work in it.
+    const allowed = ROLE_PAGES[role] || [];
+    const page = canAccess(role, activeTab) ? activeTab : (allowed[0] || null);
+    const titles = {
+        dashboard: ["แดชบอร์ด", "ภาพรวมสถานะอุปกรณ์และงานซ่อมบำรุงทั้งหมด"],
+        assets: ["ทะเบียนอุปกรณ์", "รายการเครื่องจักรและอุปกรณ์ทั้งหมดในความดูแล"],
+        pm: ["แผนซ่อมบำรุงเชิงป้องกัน", "ติดตามกำหนดการบำรุงรักษาของอุปกรณ์แต่ละชิ้น"],
+        workorders: ["ใบสั่งซ่อม", "บันทึกการแจ้งซ่อมและประวัติการดำเนินงาน"],
+        parts: ["คลังพัสดุ", "พัสดุโรงงานและสำนักงาน พร้อมประวัติรับเข้า-เบิกออก"],
+        users: ["ผู้ใช้งาน", "จัดการรายชื่อผู้ใช้งานและสิทธิ์การเข้าถึง"],
+    };
+    const [title, sub] = titles[page] || ["ไม่มีสิทธิ์เข้าถึง", "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหน้าใดในระบบ"];
+    return (React.createElement("div", { className: "cmms-root", "data-theme": theme },
+        React.createElement("style", null, STYLE),
+        React.createElement("div", { className: "app-shell" },
+            React.createElement(Sidebar, { active: page, setActive: setActiveTab, role: role, isAdmin: isAdmin, onLogout: () => setCurrentUser(null), onReset: () => setConfirmReset(true) }),
+            React.createElement("div", { className: "main" },
+                React.createElement(Topbar, { title: title, sub: sub, user: currentUser, theme: theme, onToggleTheme: toggleTheme }),
+                React.createElement("div", { className: "content" },
+                    page === "dashboard" && (React.createElement(DashboardTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, spareParts: spareParts, setActive: setActiveTab })),
+                    page === "assets" && (React.createElement(AssetsTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, canEdit: true, onChange: updateAssets, onPrint: openPrint })),
+                    page === "pm" && (React.createElement(PmTab, { pmSchedules: pmSchedules, assets: assets, users: users, canEdit: true, onChange: updatePm, onLogWorkOrder: logWorkOrder, currentUser: currentUser })),
+                    page === "workorders" && (React.createElement(WorkOrdersTab, { workOrders: workOrders, assets: assets, users: users, spareParts: spareParts, stockTxns: stockTxns, canManage: true, currentUser: currentUser, onChange: updateWo, onPartsChange: updateParts, onTxnsChange: updateStockTxns, onPrint: openPrint })),
+                    page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onPrint: openPrint })),
+                    page === "users" && isAdmin && (React.createElement(UsersTab, { users: users, onChange: updateUsers })),
+                    !page && (React.createElement(EmptyState, { text: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A" }))))),
+        confirmReset && (React.createElement(Modal, { title: "\u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E32\u0E18\u0E34\u0E15", onClose: () => setConfirmReset(false), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setConfirmReset(false) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-danger", onClick: doReset }, "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15")) },
+            React.createElement("p", { style: { fontSize: 13.5, color: "var(--text-secondary)" } }, "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 (\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E41\u0E1C\u0E19 PM \u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21 \u0E1E\u0E31\u0E2A\u0E14\u0E38 \u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32-\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01 \u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19) \u0E08\u0E30\u0E16\u0E39\u0E01\u0E25\u0E49\u0E32\u0E07\u0E41\u0E25\u0E30\u0E41\u0E17\u0E19\u0E17\u0E35\u0E48\u0E14\u0E49\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 \u0E01\u0E32\u0E23\u0E01\u0E23\u0E30\u0E17\u0E33\u0E19\u0E35\u0E49\u0E21\u0E35\u0E1C\u0E25\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E17\u0E38\u0E01\u0E04\u0E19\u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E14\u0E49"))),
+        printDoc && (React.createElement(PrintableModal, { onClose: () => setPrintDoc(null) },
+            React.createElement(PrintDocument, { type: printDoc.type, data: printDoc.data, assets: assets, spareParts: spareParts, printedAt: printDoc.printedAt })))));
+}
+/* ------------------------------------------------------------------------ */
+/* mount                                                                       */
+/* ------------------------------------------------------------------------ */
+const rootEl = document.getElementById("root");
+ReactDOM.createRoot(rootEl).render(React.createElement(React.StrictMode, null,
+    React.createElement(App, null)));
+
+</script>
+</body>
+</html>
