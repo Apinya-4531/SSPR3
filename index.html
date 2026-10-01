@@ -39,7 +39,7 @@
 // ---------------------------------------------------------------------------
 import React, { useState, useEffect, useMemo, useRef } from "https://esm.sh/react@18.3.1";
 import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
-import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, RotateCcw, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
+import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
 // Firebase itself is loaded from Google's own official CDN build (not esm.sh) —
@@ -951,7 +951,7 @@ function LoginScreen({ users, onLogin, theme, onToggleTheme }) {
 /* ------------------------------------------------------------------------ */
 /* sidebar / topbar                                                           */
 /* ------------------------------------------------------------------------ */
-function Sidebar({ active, setActive, role, isAdmin, onLogout, onReset }) {
+function Sidebar({ active, setActive, role, isAdmin, onLogout }) {
     const items = NAV_ITEMS.filter((it) => canAccess(role, it.key));
     return (React.createElement("div", { className: "sidebar" },
         React.createElement("div", { className: "brand" },
@@ -967,9 +967,6 @@ function Sidebar({ active, setActive, role, isAdmin, onLogout, onReset }) {
                 React.createElement("span", null, it.label)));
         })),
         React.createElement("div", { className: "sidebar-foot" },
-            isAdmin && (React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onReset },
-                React.createElement(RotateCcw, { size: 14 }),
-                " \u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E32\u0E18\u0E34\u0E15")),
             React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onLogout },
                 React.createElement(LogOut, { size: 14 }),
                 " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A"))));
@@ -2145,7 +2142,6 @@ export default function App() {
     const loading = usersLoading || assetsLoading || pmLoading || woLoading || partsLoading || txnsLoading;
     const [currentUser, setCurrentUser] = useState(null);
     const [activeTab, setActiveTab] = useState("dashboard");
-    const [confirmReset, setConfirmReset] = useState(false);
     const [printDoc, setPrintDoc] = useState(null);
     const [theme, setTheme] = useState("dark");
     // Dark/light mode is a per-browser preference, not shared data, so it stays
@@ -2174,15 +2170,6 @@ export default function App() {
         updateWo([...workOrders, { id, ...partial }]);
     };
     const openPrint = (type, data) => setPrintDoc({ type, data, printedAt: new Date() });
-    const doReset = () => {
-        updateUsers(seedUsers());
-        updateAssets(seedAssets());
-        updatePm(seedPmSchedules());
-        updateWo(seedWorkOrders());
-        updateParts(seedSpareParts());
-        updateStockTxns(seedStockTxns());
-        setConfirmReset(false);
-    };
     if (loading) {
         return (React.createElement("div", { className: "cmms-root", "data-theme": theme, style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" } },
             React.createElement("style", null, STYLE),
@@ -2213,7 +2200,7 @@ export default function App() {
     return (React.createElement("div", { className: "cmms-root", "data-theme": theme },
         React.createElement("style", null, STYLE),
         React.createElement("div", { className: "app-shell" },
-            React.createElement(Sidebar, { active: page, setActive: setActiveTab, role: role, isAdmin: isAdmin, onLogout: () => setCurrentUser(null), onReset: () => setConfirmReset(true) }),
+            React.createElement(Sidebar, { active: page, setActive: setActiveTab, role: role, isAdmin: isAdmin, onLogout: () => setCurrentUser(null) }),
             React.createElement("div", { className: "main" },
                 React.createElement(Topbar, { title: title, sub: sub, user: currentUser, theme: theme, onToggleTheme: toggleTheme }),
                 React.createElement("div", { className: "content" },
@@ -2224,10 +2211,6 @@ export default function App() {
                     page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onPrint: openPrint })),
                     page === "users" && isAdmin && (React.createElement(UsersTab, { users: users, onChange: updateUsers })),
                     !page && (React.createElement(EmptyState, { text: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A" }))))),
-        confirmReset && (React.createElement(Modal, { title: "\u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E32\u0E18\u0E34\u0E15", onClose: () => setConfirmReset(false), footer: React.createElement(React.Fragment, null,
-                React.createElement("button", { className: "btn btn-outline", onClick: () => setConfirmReset(false) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
-                React.createElement("button", { className: "btn btn-danger", onClick: doReset }, "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E35\u0E40\u0E0B\u0E47\u0E15")) },
-            React.createElement("p", { style: { fontSize: 13.5, color: "var(--text-secondary)" } }, "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 (\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E41\u0E1C\u0E19 PM \u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21 \u0E1E\u0E31\u0E2A\u0E14\u0E38 \u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32-\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01 \u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19) \u0E08\u0E30\u0E16\u0E39\u0E01\u0E25\u0E49\u0E32\u0E07\u0E41\u0E25\u0E30\u0E41\u0E17\u0E19\u0E17\u0E35\u0E48\u0E14\u0E49\u0E27\u0E22\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 \u0E01\u0E32\u0E23\u0E01\u0E23\u0E30\u0E17\u0E33\u0E19\u0E35\u0E49\u0E21\u0E35\u0E1C\u0E25\u0E01\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E17\u0E38\u0E01\u0E04\u0E19\u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E14\u0E49"))),
         printDoc && (React.createElement(PrintableModal, { onClose: () => setPrintDoc(null) },
             React.createElement(PrintDocument, { type: printDoc.type, data: printDoc.data, assets: assets, spareParts: spareParts, printedAt: printDoc.printedAt })))));
 }
