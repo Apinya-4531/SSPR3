@@ -39,7 +39,7 @@
 // ---------------------------------------------------------------------------
 import React, { useState, useEffect, useMemo, useRef } from "https://esm.sh/react@18.3.1";
 import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
-import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
+import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, Menu, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
 // Firebase itself is loaded from Google's own official CDN build (not esm.sh) —
@@ -370,6 +370,10 @@ const STYLE = `
 .nav-item:hover { background: var(--bg-panel-raised); color: var(--text-primary); }
 .nav-item.active { background: var(--bg-panel-raised); color: var(--accent-amber); border-left: 3px solid var(--accent-amber); font-weight: 600; }
 .sidebar-foot { border-top: 1px solid var(--border-steel); padding-top: 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+/* Hamburger toggle + the nav's own copy of the logout button: both exist
+   only for the phone dropdown menu below, so they stay hidden on desktop. */
+.mobile-menu-btn { display: none; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border-steel); background: var(--bg-panel-raised); color: var(--text-primary); cursor: pointer; flex-shrink: 0; margin-left: auto; }
+.nav-mobile-foot { display: none; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--border-steel); gap: 16px; flex-wrap: wrap; }
@@ -552,13 +556,27 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 }
 
 @media (max-width: 860px) {
+  /* The full item list no longer fits beside the logo on a phone, so the
+     sidebar becomes a slim top bar (logo + hamburger) and the menu itself
+     drops down as an overlay panel instead of a cramped horizontal-scroll
+     strip that only ever showed one tab at a time. */
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: relative; flex-direction: row; align-items: center; padding: 12px; overflow-x: auto; }
-  .brand { padding: 0 12px 0 0; }
-  .nav { flex-direction: row; overflow-x: auto; }
-  .nav-item { flex-shrink: 0; border-left: none; border-bottom: 3px solid transparent; }
-  .nav-item.active { border-left: none; border-bottom: 3px solid var(--accent-amber); }
+  .sidebar { width: 100%; height: auto; position: relative; flex-direction: column; align-items: stretch; padding: 10px 14px; overflow: visible; z-index: 60; }
+  .brand { width: 100%; padding: 2px 0; }
+  .nav {
+    display: none; flex-direction: column; gap: 2px;
+    position: absolute; top: calc(100% + 4px); left: 14px; right: 14px;
+    background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 10px;
+    padding: 8px; max-height: 75vh; overflow-y: auto;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+  }
+  .nav.mobile-open { display: flex; }
+  .nav-item { flex-shrink: 0; padding: 12px 14px; }
+  .mobile-menu-btn { display: inline-flex; }
+  .nav-mobile-foot { display: block; border-top: 1px solid var(--border-steel); margin-top: 6px; padding-top: 8px; }
+  .nav-mobile-foot .btn { width: 100%; justify-content: center; }
   .sidebar-foot { display: none; }
+  .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 55; }
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
   .grid-2 { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
@@ -824,9 +842,6 @@ function IssuePrint({ data, printedAt }) {
                 React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
             React.createElement("div", { className: "print-sign-block" },
                 React.createElement("div", { className: "print-sign-line" }, "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E04\u0E25\u0E31\u0E07\u0E08\u0E48\u0E32\u0E22"),
-                React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")),
-            React.createElement("div", { className: "print-sign-block" },
-                React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34"),
                 React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
 }
 function AssetHistoryPrint({ data, printedAt }) {
@@ -957,23 +972,42 @@ function LoginScreen({ users, onLogin, theme, onToggleTheme }) {
 /* ------------------------------------------------------------------------ */
 function Sidebar({ active, setActive, role, isAdmin, onLogout }) {
     const items = NAV_ITEMS.filter((it) => canAccess(role, it.key));
+    // On a phone the full item list no longer fits beside the logo, so it
+    // collapses into a dropdown menu opened by the hamburger button below.
+    // Desktop ignores this state entirely (the button is hidden via CSS).
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const selectItem = (key) => {
+        setActive(key);
+        setMobileOpen(false);
+    };
+    const doLogout = () => {
+        setMobileOpen(false);
+        onLogout();
+    };
     return (React.createElement("div", { className: "sidebar" },
         React.createElement("div", { className: "brand" },
             React.createElement("div", { className: "brand-mark" },
                 React.createElement("img", { src: LOGO_ICON, alt: "TMT" })),
             React.createElement("div", { className: "brand-text" },
                 React.createElement("div", { className: "t1" }, "\u0E23\u0E30\u0E1A\u0E1A\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E33\u0E23\u0E38\u0E07 \u0E41\u0E25\u0E30 \u0E04\u0E25\u0E31\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
-                React.createElement("div", { className: "t2" }, "TMT RAMA3"))),
-        React.createElement("div", { className: "nav" }, items.map((it) => {
-            const Icon = it.icon;
-            return (React.createElement("button", { key: it.key, className: `nav-item${active === it.key ? " active" : ""}`, onClick: () => setActive(it.key) },
-                React.createElement(Icon, { size: 17 }),
-                React.createElement("span", null, it.label)));
-        })),
+                React.createElement("div", { className: "t2" }, "TMT RAMA3")),
+            React.createElement("button", { className: "mobile-menu-btn", onClick: () => setMobileOpen((v) => !v), "aria-label": mobileOpen ? "ปิดเมนู" : "เปิดเมนู" }, mobileOpen ? React.createElement(X, { size: 20 }) : React.createElement(Menu, { size: 20 }))),
+        React.createElement("div", { className: `nav${mobileOpen ? " mobile-open" : ""}` },
+            items.map((it) => {
+                const Icon = it.icon;
+                return (React.createElement("button", { key: it.key, className: `nav-item${active === it.key ? " active" : ""}`, onClick: () => selectItem(it.key) },
+                    React.createElement(Icon, { size: 17 }),
+                    React.createElement("span", null, it.label)));
+            }),
+            React.createElement("div", { className: "nav-mobile-foot" },
+                React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: doLogout },
+                    React.createElement(LogOut, { size: 14 }),
+                    " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A"))),
         React.createElement("div", { className: "sidebar-foot" },
             React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onLogout },
                 React.createElement(LogOut, { size: 14 }),
-                " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A"))));
+                " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A")),
+        mobileOpen && React.createElement("div", { className: "mobile-nav-overlay", onClick: () => setMobileOpen(false) })));
 }
 function Topbar({ title, sub, user, theme, onToggleTheme }) {
     return (React.createElement("div", { className: "topbar" },
@@ -1738,7 +1772,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
 /* ------------------------------------------------------------------------ */
 /* inventory (items + receive/issue ledger)                                   */
 /* ------------------------------------------------------------------------ */
-function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChange, onTxnsAdd, onPrint }) {
+function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChange, onTxnsAdd, onTxnsChange, onPrint }) {
     const [subView, setSubView] = useState("items");
     const [query, setQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
@@ -1752,6 +1786,11 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     const [issueModal, setIssueModal] = useState(false);
     const [issueForm, setIssueForm] = useState({});
     const [imagePreview, setImagePreview] = useState(null);
+    const [txnEditModal, setTxnEditModal] = useState(null);
+    const [txnEditForm, setTxnEditForm] = useState({});
+    // Only admins and store staff may correct a past receive/issue record —
+    // everyone else only gets to view and print the history.
+    const canEditHistory = currentUser.role === "ADMIN" || currentUser.role === "STORE";
     const handleImageFile = (file) => {
         if (!file)
             return;
@@ -1848,6 +1887,46 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         onTxnsAdd([txn]);
         setIssueModal(false);
         onPrint("issue", txn);
+    };
+    const openTxnEdit = (t) => {
+        setTxnEditForm({ ...t });
+        setTxnEditModal(t);
+    };
+    const submitTxnEdit = () => {
+        const original = txnEditModal;
+        if (!original)
+            return;
+        const newQty = Number(txnEditForm.qty) || 0;
+        if (newQty <= 0)
+            return;
+        const qtyDelta = newQty - Number(original.qty || 0);
+        // Keep the item's current stock in sync with the corrected quantity:
+        // a receive that's now bigger adds the difference, an issue that's now
+        // bigger takes the difference away (and vice versa).
+        if (qtyDelta !== 0) {
+            const direction = original.type === "RECEIVE" ? 1 : -1;
+            onItemsChange(spareParts.map((p) => p.id === original.itemId ? { ...p, quantity: Math.max(0, Number(p.quantity) + direction * qtyDelta) } : p));
+        }
+        const updatedTxn = {
+            ...original,
+            qty: newQty,
+            unit: txnEditForm.unit || original.unit,
+            unitPrice: Number(txnEditForm.unitPrice) || 0,
+            date: txnEditForm.date || original.date,
+            reference: txnEditForm.reference || "",
+            note: txnEditForm.note || "",
+            ...(original.type === "RECEIVE"
+                ? { person: txnEditForm.person || "", receivedBy: txnEditForm.receivedBy || original.receivedBy }
+                : {
+                    person: txnEditForm.person || "",
+                    department: txnEditForm.department || "",
+                    usageType: txnEditForm.usageType || original.usageType,
+                    usageLocation: txnEditForm.usageLocation || "",
+                    recordedBy: txnEditForm.recordedBy || original.recordedBy,
+                }),
+        };
+        onTxnsChange(stockTxns.map((t) => (t.id === original.id ? updatedTxn : t)));
+        setTxnEditModal(null);
     };
     const sortedTxns = [...stockTxns]
         .filter((t) => !txnFilter || t.type === txnFilter)
@@ -1975,8 +2054,11 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("td", null, t.type === "RECEIVE" ? t.receivedBy : t.recordedBy),
                     React.createElement("td", null, t.reference || "-"),
                     React.createElement("td", null,
-                        React.createElement("button", { className: "icon-btn", onClick: () => onPrint(t.type === "RECEIVE" ? "receive" : "issue", t) },
-                            React.createElement(Printer, { size: 14 })))))))))))),
+                        React.createElement("div", { className: "row-actions" },
+                            canEditHistory && React.createElement("button", { className: "icon-btn", title: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClick: () => openTxnEdit(t) },
+                                React.createElement(Edit2, { size: 14 })),
+                            React.createElement("button", { className: "icon-btn", title: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C", onClick: () => onPrint(t.type === "RECEIVE" ? "receive" : "issue", t) },
+                                React.createElement(Printer, { size: 14 }))))))))))))),
         modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มพัสดุใหม่" : "แก้ไขข้อมูลพัสดุ", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
                 React.createElement("button", { className: "btn btn-primary", onClick: submitItem },
@@ -2063,7 +2145,56 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("label", null, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"),
                     React.createElement("textarea", { rows: 2, value: issueForm.note || "", onChange: (e) => setIssueForm({ ...issueForm, note: e.target.value }) }))))),
         imagePreview && (React.createElement(Modal, { title: imagePreview.name, onClose: () => setImagePreview(null) },
-            React.createElement("img", { src: imagePreview.imageUrl, alt: imagePreview.name, style: { width: "100%", borderRadius: 8, display: "block" } })))));
+            React.createElement("img", { src: imagePreview.imageUrl, alt: imagePreview.name, style: { width: "100%", borderRadius: 8, display: "block" } }))),
+        txnEditModal && (React.createElement(Modal, { title: `แก้ไขรายการ${TXN_TYPE[txnEditModal.type]} — ${txnEditModal.id}`, onClose: () => setTxnEditModal(null), footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setTxnEditModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitTxnEdit },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02")) },
+            React.createElement("p", { style: { fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14 } },
+                "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23: ",
+                React.createElement("strong", null, txnEditModal.itemName),
+                " \u2014 \u0E2B\u0E32\u0E01\u0E41\u0E01\u0E49\u0E44\u0E02\u0E08\u0E33\u0E19\u0E27\u0E19 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E1B\u0E23\u0E31\u0E1A\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E02\u0E2D\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E43\u0E2B\u0E49\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E08\u0E33\u0E19\u0E27\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"),
+            React.createElement("div", { className: "form-grid" },
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null,
+                        "\u0E08\u0E33\u0E19\u0E27\u0E19",
+                        txnEditModal.type === "RECEIVE" ? "ที่รับเข้า" : "ที่เบิก",
+                        React.createElement("span", { className: "req" }, "*")),
+                    React.createElement("input", { type: "number", min: "1", value: txnEditForm.qty ?? "", onChange: (e) => setTxnEditForm({ ...txnEditForm, qty: e.target.value }) })),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"),
+                    React.createElement("input", { type: "date", value: txnEditForm.date || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, date: e.target.value }) })),
+                txnEditModal.type === "RECEIVE" ? (React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32/\u0E1C\u0E39\u0E49\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07"),
+                        React.createElement("input", { type: "text", value: txnEditForm.person || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, person: e.target.value }) })),
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E40\u0E0A\u0E48\u0E19 \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E2A\u0E48\u0E07\u0E02\u0E2D\u0E07/\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E37\u0E49\u0E2D)"),
+                        React.createElement("input", { type: "text", value: txnEditForm.reference || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, reference: e.target.value }) })))) : (React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E1C\u0E39\u0E49\u0E40\u0E1A\u0E34\u0E01"),
+                        React.createElement("input", { type: "text", value: txnEditForm.person || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, person: e.target.value }) })),
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E41\u0E1C\u0E19\u0E01"),
+                        React.createElement("select", { value: txnEditForm.department || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, department: e.target.value }) },
+                            React.createElement("option", { value: "" }, "-- \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19 --"),
+                            DEPARTMENT_OPTIONS.map((d) => React.createElement("option", { key: d, value: d }, d)))),
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"),
+                        React.createElement("select", { value: txnEditForm.usageType || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, usageType: e.target.value }) }, USAGE_TYPES.map((t) => React.createElement("option", { key: t, value: t }, t)))),
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E08\u0E38\u0E14\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"),
+                        React.createElement("input", { type: "text", value: txnEditForm.usageLocation || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, usageLocation: e.target.value }) })),
+                    React.createElement("div", { className: "field" },
+                        React.createElement("label", null, "\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E40\u0E0A\u0E48\u0E19 \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21)"),
+                        React.createElement("input", { type: "text", value: txnEditForm.reference || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, reference: e.target.value }) })))),
+                React.createElement("div", { className: "field" },
+                    React.createElement("label", null, "\u0E23\u0E32\u0E04\u0E32\u0E15\u0E48\u0E2D\u0E2B\u0E19\u0E48\u0E27\u0E22 (\u0E1A\u0E32\u0E17)"),
+                    React.createElement("input", { type: "number", min: "0", value: txnEditForm.unitPrice ?? "", onChange: (e) => setTxnEditForm({ ...txnEditForm, unitPrice: e.target.value }) })),
+                React.createElement("div", { className: "field field-wide" },
+                    React.createElement("label", null, "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"),
+                    React.createElement("textarea", { rows: 2, value: txnEditForm.note || "", onChange: (e) => setTxnEditForm({ ...txnEditForm, note: e.target.value }) })))))));
 }
 /* ------------------------------------------------------------------------ */
 /* users                                                                       */
@@ -2212,7 +2343,7 @@ export default function App() {
                     page === "assets" && (React.createElement(AssetsTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, canEdit: true, onChange: updateAssets, onPrint: openPrint })),
                     page === "pm" && (React.createElement(PmTab, { pmSchedules: pmSchedules, assets: assets, users: users, canEdit: true, onChange: updatePm, onLogWorkOrder: logWorkOrder, currentUser: currentUser })),
                     page === "workorders" && (React.createElement(WorkOrdersTab, { workOrders: workOrders, assets: assets, users: users, spareParts: spareParts, stockTxns: stockTxns, canManage: true, currentUser: currentUser, onChange: updateWo, onPartsChange: updateParts, onTxnsChange: updateStockTxns, onPrint: openPrint })),
-                    page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onPrint: openPrint })),
+                    page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onTxnsChange: updateStockTxns, onPrint: openPrint })),
                     page === "users" && isAdmin && (React.createElement(UsersTab, { users: users, onChange: updateUsers })),
                     !page && (React.createElement(EmptyState, { text: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A" }))))),
         printDoc && (React.createElement(PrintableModal, { onClose: () => setPrintDoc(null) },
