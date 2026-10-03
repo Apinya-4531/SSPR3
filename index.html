@@ -78,7 +78,7 @@ const ROLE_PAGES = {
 };
 // Simple shared access code per role (this is a client-side prototype convenience gate,
 // not real authentication — anyone with the page source can read it).
-const ROLE_PASSCODES = { ADMIN: "tmtrama3", MAINTENANCE: "tmt01", STORE: "tmt02" };
+const ROLE_PASSCODES = { ADMIN: "tmtrama3", MAINTENANCE: "tmt02", STORE: "tmt01" };
 const canAccess = (role, page) => (ROLE_PAGES[role] || []).includes(page);
 const NAV_ITEMS = [
     { key: "dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
@@ -1816,6 +1816,8 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     // Only admins and store staff may correct a past receive/issue record —
     // everyone else only gets to view and print the history.
     const canEditHistory = currentUser.role === "ADMIN" || currentUser.role === "STORE";
+    // Deleting a record (not just correcting it) is kept to admins only.
+    const canDeleteHistory = currentUser.role === "ADMIN";
     const handleImageFile = (file) => {
         if (!file)
             return;
@@ -1953,6 +1955,15 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         onTxnsChange(stockTxns.map((t) => (t.id === original.id ? updatedTxn : t)));
         setTxnEditModal(null);
     };
+    const deleteTxn = (t) => {
+        // Undo the record's effect on stock before removing it — a deleted
+        // receive gives back what it added, a deleted issue returns what it
+        // took out — so the on-hand quantity stays correct once the history
+        // entry is gone.
+        const direction = t.type === "RECEIVE" ? -1 : 1;
+        onItemsChange(spareParts.map((p) => p.id === t.itemId ? { ...p, quantity: Math.max(0, Number(p.quantity) + direction * Number(t.qty || 0)) } : p));
+        onTxnsChange(stockTxns.filter((x) => x.id !== t.id));
+    };
     const sortedTxns = [...stockTxns]
         .filter((t) => !txnFilter || t.type === txnFilter)
         .filter((t) => !monthFilter || (t.date || "").slice(0, 7) === monthFilter)
@@ -2083,7 +2094,9 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                             canEditHistory && React.createElement("button", { className: "icon-btn", title: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClick: () => openTxnEdit(t) },
                                 React.createElement(Edit2, { size: 14 })),
                             React.createElement("button", { className: "icon-btn", title: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C", onClick: () => onPrint(t.type === "RECEIVE" ? "receive" : "issue", t) },
-                                React.createElement(Printer, { size: 14 }))))))))))))),
+                                React.createElement(Printer, { size: 14 })),
+                            canDeleteHistory && React.createElement("button", { className: "icon-btn", title: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClick: () => deleteTxn(t) },
+                                React.createElement(Trash2, { size: 14 }))))))))))))),
         modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มพัสดุใหม่" : "แก้ไขข้อมูลพัสดุ", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
                 React.createElement("button", { className: "btn btn-primary", onClick: submitItem },
