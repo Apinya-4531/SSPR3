@@ -519,7 +519,15 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .print-sign-line { border-top: 1px dotted #6B6B6B; margin-top: 46px; padding-top: 6px; font-size: 12.5px; color: #333; font-weight: 600; }
 .print-sign-date { font-size: 11.5px; color: #888; margin-top: 4px; }
 
-/* Receive/Issue slips: sized to fit exactly one A5-landscape sheet */
+/* Receive/Issue/Work-order slips: laid out to fit one A5-landscape sheet.
+   The box is NOT given a fixed height — it sizes to its own content. A fixed
+   height here is what caused a 2nd, mostly-blank page: if the printer/driver
+   doesn't actually hand the page the exact A5 dimensions we assume (common —
+   many printers don't offer true A5 and silently substitute another size),
+   a box that insists on being exactly "one A5 page tall" can end up taller
+   than the real printable area and spill its bottom half onto a second
+   sheet. Sizing to content instead means it only ever needs as much height
+   as it truly uses, so it fits even on a page smaller than assumed. */
 .print-a5 { display: flex; flex-direction: column; padding: 20px 24px; }
 .print-a5-body { flex: 1 1 auto; }
 .print-a5 .print-info-grid { gap: 10px 24px; margin-bottom: 12px; }
@@ -530,7 +538,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .print-a5 .print-sign-line { margin-top: 26px; }
 
 @media print {
-  .print-a5 { width: 194mm; height: 132mm; box-sizing: border-box; padding: 6mm 9mm; }
+  .print-a5 { width: 194mm; box-sizing: border-box; padding: 6mm 9mm; }
 }
 
 @media print {
