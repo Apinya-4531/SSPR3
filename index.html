@@ -29,8 +29,7 @@
   };
 </script>
 
-<script type="module">
-// ---------------------------------------------------------------------------
+<script type="module">// ---------------------------------------------------------------------------
 // This build loads every library straight from the esm.sh CDN at runtime, so
 // this one HTML file needs no npm install / build step — the browser that
 // opens it fetches React, the icons, the charts, Excel export and Firebase
@@ -243,7 +242,7 @@ function seedSpareParts() {
 function seedStockTxns() {
     return [
         { id: "RCV-0001", type: "RECEIVE", itemId: "SP-0003", itemName: "น้ำมันไฮดรอลิก เกรด 46", qty: 40, unit: "ลิตร", unitPrice: 85, date: addDays(today(), -20), reference: "ใบส่งของเลขที่ DN-5521", person: "บริษัท สยามหล่อลื่น จำกัด", receivedBy: "ประยุทธ ช่างเหล็ก", note: "" },
-        { id: "ISS-0001", type: "ISSUE", itemId: "SP-0001", itemName: "สลิงเหล็ก 10 ตัน", qty: 1, unit: "เส้น", unitPrice: 1850, date: addDays(today(), -5), reference: "WO-0002", person: "ประยุทธ ช่างเหล็ก", department: "ซ่อมบำรุง", usageType: USAGE_TYPES[1], usageLocation: "คลังสินค้า B", recordedBy: "ประยุทธ ช่างเหล็ก", note: "เปลี่ยนสลิงเครนคลัง B ตามแผน PM" },
+        { id: "OUT-0001", type: "ISSUE", itemId: "SP-0001", itemName: "สลิงเหล็ก 10 ตัน", qty: 1, unit: "เส้น", unitPrice: 1850, date: addDays(today(), -5), reference: "WO-0002", person: "ประยุทธ ช่างเหล็ก", department: "ซ่อมบำรุง", usageType: USAGE_TYPES[1], usageLocation: "คลังสินค้า B", recordedBy: "ประยุทธ ช่างเหล็ก", note: "เปลี่ยนสลิงเครนคลัง B ตามแผน PM" },
     ];
 }
 /* ------------------------------------------------------------------------ */
@@ -1545,7 +1544,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
             Object.entries(requested).forEach(([partId, qty]) => {
                 const part = spareParts.find((sp) => sp.id === partId);
                 const txn = {
-                    id: genId("ISS", txnList),
+                    id: genId("OUT", txnList),
                     type: "ISSUE",
                     itemId: partId,
                     itemName: part ? part.name : partId,
@@ -1610,7 +1609,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
         Object.entries(newRequested).forEach(([partId, qty]) => {
             const part = finalParts.find((sp) => sp.id === partId);
             const txn = {
-                id: genId("ISS", txnList),
+                id: genId("OUT", txnList),
                 type: "ISSUE",
                 itemId: partId,
                 itemName: part ? part.name : partId,
@@ -1904,7 +1903,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const qty = Number(issueForm.qty);
         onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Math.max(0, Number(p.quantity) - qty) } : p)));
         const txn = {
-            id: genId("ISS", stockTxns), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            id: genId("OUT", stockTxns), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
             unitPrice: Number(item.unitPrice) || 0,
             date: issueForm.date || today(), reference: issueForm.reference, person: issueForm.person,
             department: issueForm.department, usageType: issueForm.usageType, usageLocation: issueForm.usageLocation,
