@@ -1544,7 +1544,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
             Object.entries(requested).forEach(([partId, qty]) => {
                 const part = spareParts.find((sp) => sp.id === partId);
                 const txn = {
-                    id: genId("OUT", txnList),
+                    id: genId("OUT", txnList.filter((t) => t.type === "ISSUE")),
                     type: "ISSUE",
                     itemId: partId,
                     itemName: part ? part.name : partId,
@@ -1609,7 +1609,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
         Object.entries(newRequested).forEach(([partId, qty]) => {
             const part = finalParts.find((sp) => sp.id === partId);
             const txn = {
-                id: genId("OUT", txnList),
+                id: genId("OUT", txnList.filter((t) => t.type === "ISSUE")),
                 type: "ISSUE",
                 itemId: partId,
                 itemName: part ? part.name : partId,
@@ -1885,7 +1885,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const qty = Number(receiveForm.qty);
         onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Number(p.quantity) + qty } : p)));
         const txn = {
-            id: genId("RCV", stockTxns), type: "RECEIVE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            id: genId("RCV", stockTxns.filter((t) => t.type === "RECEIVE")), type: "RECEIVE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
             unitPrice: Number(item.unitPrice) || 0,
             date: receiveForm.date || today(), reference: receiveForm.reference, person: receiveForm.person,
             receivedBy: currentUser.name, note: receiveForm.note,
@@ -1905,7 +1905,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const qty = Number(issueForm.qty);
         onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Math.max(0, Number(p.quantity) - qty) } : p)));
         const txn = {
-            id: genId("OUT", stockTxns), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            id: genId("OUT", stockTxns.filter((t) => t.type === "ISSUE")), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
             unitPrice: Number(item.unitPrice) || 0,
             date: issueForm.date || today(), reference: issueForm.reference, person: issueForm.person,
             department: issueForm.department, usageType: issueForm.usageType, usageLocation: issueForm.usageLocation,
