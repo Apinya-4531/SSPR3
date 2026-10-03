@@ -569,9 +569,6 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 10px;
     padding: 8px; max-height: 75vh; overflow-y: auto;
     box-shadow: 0 16px 40px rgba(0,0,0,0.35);
-    /* Must sit above .mobile-nav-overlay (z-index: 55) — without this, the
-       dimming overlay painted on top of it would silently catch every tap
-       meant for a menu item, closing the menu instead of navigating. */
     z-index: 56;
   }
   .nav.mobile-open { display: flex; }
@@ -580,7 +577,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .nav-mobile-foot { display: block; border-top: 1px solid var(--border-steel); margin-top: 6px; padding-top: 8px; }
   .nav-mobile-foot .btn { width: 100%; justify-content: center; }
   .sidebar-foot { display: none; }
-  .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 55; }
+  /* pointer-events: none — this layer is only ever a visual dimming; the
+     menu closes on outside taps via a document-level listener instead (see
+     Sidebar), so this can never sit in the way of a real tap target. */
+  .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 55; pointer-events: none; }
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
   .grid-2 { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
@@ -980,6 +980,7 @@ function Sidebar({ active, setActive, role, isAdmin, onLogout }) {
     // collapses into a dropdown menu opened by the hamburger button below.
     // Desktop ignores this state entirely (the button is hidden via CSS).
     const [mobileOpen, setMobileOpen] = useState(false);
+    const sidebarRef = useRef(null);
     const selectItem = (key) => {
         setActive(key);
         setMobileOpen(false);
@@ -988,7 +989,28 @@ function Sidebar({ active, setActive, role, isAdmin, onLogout }) {
         setMobileOpen(false);
         onLogout();
     };
-    return (React.createElement("div", { className: "sidebar" },
+    // Close the dropdown on an outside tap. This used to be done with a
+    // dimming overlay <div> that sat behind the dropdown and caught clicks via
+    // onClick — but a fixed, semi-transparent, z-indexed layer like that is a
+    // known trouble spot on some mobile browsers (notably iOS Safari), which
+    // can promote it to its own compositing layer and have it swallow the
+    // touch before it ever reaches the real target underneath, even though
+    // the stacking order on paper says the dropdown is on top. A document-level
+    // listener sidesteps the whole question: there is no overlay element in
+    // the hit-testing path at all, so a tap on a menu item can never be
+    // intercepted by anything meant only to close the menu.
+    useEffect(() => {
+        if (!mobileOpen)
+            return undefined;
+        const handlePointerDown = (e) => {
+            if (sidebarRef.current && !sidebarRef.current.contains(e.target)) {
+                setMobileOpen(false);
+            }
+        };
+        document.addEventListener("pointerdown", handlePointerDown);
+        return () => document.removeEventListener("pointerdown", handlePointerDown);
+    }, [mobileOpen]);
+    return (React.createElement("div", { className: "sidebar", ref: sidebarRef },
         React.createElement("div", { className: "brand" },
             React.createElement("div", { className: "brand-mark" },
                 React.createElement("img", { src: LOGO_ICON, alt: "TMT" })),
@@ -1011,7 +1033,7 @@ function Sidebar({ active, setActive, role, isAdmin, onLogout }) {
             React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: onLogout },
                 React.createElement(LogOut, { size: 14 }),
                 " \u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E23\u0E30\u0E1A\u0E1A")),
-        mobileOpen && React.createElement("div", { className: "mobile-nav-overlay", onClick: () => setMobileOpen(false) })));
+        mobileOpen && React.createElement("div", { className: "mobile-nav-overlay" })));
 }
 function Topbar({ title, sub, user, theme, onToggleTheme }) {
     return (React.createElement("div", { className: "topbar" },
@@ -2359,7 +2381,6 @@ export default function App() {
 const rootEl = document.getElementById("root");
 ReactDOM.createRoot(rootEl).render(React.createElement(React.StrictMode, null,
     React.createElement(App, null)));
-
 </script>
 </body>
 </html>
