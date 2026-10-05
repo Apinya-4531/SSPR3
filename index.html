@@ -3,6 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- This whole app is one HTML file that updates often, and several mobile
+     browsers (notably iOS Safari) have been caching it stubbornly enough
+     that people kept seeing an old version after a fresh update went out.
+     These tell the browser not to serve a stored copy without checking the
+     server first. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>ระบบซ่อมบำรุง และ คลังพัสดุ - TMT RAMA3</title>
 </head>
 <body>
