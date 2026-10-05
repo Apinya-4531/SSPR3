@@ -719,8 +719,8 @@ function InfoItem({ icon: Icon, label, value, wide }) {
 }
 function WoPrint({ data, assets, spareParts, printedAt }) {
     const asset = assets.find((a) => a.id === data.assetId);
-    return (React.createElement("div", { className: "print-paper print-a5" },
-        React.createElement("style", null, "@page { size: A5 landscape; margin: 8mm; }"),
+    return (React.createElement("div", { className: "print-paper" },
+        React.createElement("style", null, "@page { size: A4 portrait; margin: 14mm; }"),
         React.createElement("div", { className: "print-a5-body" },
             React.createElement(DocHeader, { docTypeLabel: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21", docNo: data.id, compact: true }),
             React.createElement("div", { className: "print-info-grid" },
@@ -1190,6 +1190,7 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
     const [modal, setModal] = useState(null);
     const [formValues, setFormValues] = useState({});
     const [detail, setDetail] = useState(null);
+    const [idError, setIdError] = useState("");
     const fields = [
         { key: "name", label: "ชื่ออุปกรณ์", type: "text", required: true, wide: true },
         { key: "type", label: "ประเภทอุปกรณ์", type: "select", options: ASSET_TYPES },
@@ -1198,6 +1199,13 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
         { key: "serialNumber", label: "หมายเลขเครื่อง (Serial No.)", type: "text" },
         { key: "installDate", label: "วันที่ติดตั้ง", type: "date" },
     ];
+    // Only the "add" form gets a รหัสอุปกรณ์ field — the user types their own
+    // code instead of the auto AST-xxxx one. Editing is left out of this field
+    // on purpose: the id is what PM schedules and work orders reference, so
+    // changing it after the fact would orphan those links.
+    const formFields = modal && modal.mode === "add"
+        ? [{ key: "id", label: "รหัสอุปกรณ์", type: "text", required: true, wide: true }, ...fields]
+        : fields;
     const filtered = assets.filter((a) => {
         const q = query.toLowerCase();
         const matchQ = !query || a.name.toLowerCase().includes(q) || (a.serialNumber || "").toLowerCase().includes(q);
@@ -1210,14 +1218,23 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
             return null;
         return [...list].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue))[0];
     };
-    const openAdd = () => { setFormValues({}); setModal({ mode: "add" }); };
-    const openEdit = (a) => { setFormValues(a); setModal({ mode: "edit", id: a.id }); };
+    const openAdd = () => { setFormValues({}); setIdError(""); setModal({ mode: "add" }); };
+    const openEdit = (a) => { setFormValues(a); setIdError(""); setModal({ mode: "edit", id: a.id }); };
     const submit = () => {
         if (!formValues.name)
             return;
         if (modal.mode === "add") {
-            const id = genId("AST", assets);
-            onChange([...assets, { id, ...formValues }]);
+            const id = (formValues.id || "").trim();
+            if (!id) {
+                setIdError("กรุณากรอกรหัสอุปกรณ์");
+                return;
+            }
+            if (assets.some((a) => a.id.toLowerCase() === id.toLowerCase())) {
+                setIdError(`รหัสอุปกรณ์ "${id}" ถูกใช้แล้ว กรุณาใช้รหัสอื่น`);
+                return;
+            }
+            const { id: _drop, ...rest } = formValues;
+            onChange([...assets, { id, ...rest }]);
         }
         else {
             onChange(assets.map((a) => (a.id === modal.id ? { ...a, ...formValues } : a)));
@@ -1275,7 +1292,11 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
                 React.createElement("button", { className: "btn btn-primary", onClick: submit },
                     React.createElement(Check, { size: 15 }),
                     " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
-            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+            idError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
+                React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, idError))),
+            React.createElement(RecordForm, { fields: formFields, values: formValues, onChange: (k, v) => { setFormValues({ ...formValues, [k]: v }); if (k === "id")
+                    setIdError(""); } }))),
         detail && (React.createElement(Modal, { title: detail.name, onClose: () => setDetail(null), wide: true },
             React.createElement("div", { className: "detail-grid" },
                 React.createElement("div", null,
