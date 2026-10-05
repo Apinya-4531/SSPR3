@@ -46,7 +46,7 @@
 // ---------------------------------------------------------------------------
 import React, { useState, useEffect, useMemo, useRef } from "https://esm.sh/react@18.3.1";
 import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
-import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, Menu, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
+import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Warehouse, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, Menu, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
 // Firebase itself is loaded from Google's own official CDN build (not esm.sh) —
@@ -560,6 +560,13 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .cmms-root .print-modal-overlay .modal-panel { max-width: none !important; max-height: none !important; box-shadow: none !important; border: none !important; width: 100% !important; }
   .cmms-root .print-modal-overlay .modal-body { overflow: visible !important; padding: 0 !important; }
   .print-paper { box-shadow: none !important; }
+  /* .cmms-root (the whole app's root wrapper) is pinned to min-height: 100vh
+     so the on-screen layout always fills the browser window. The print modal
+     lives inside that same root, and nothing above resets this, so the root
+     stayed "at least one screen tall" even while printing a document whose
+     real content is much shorter — the extra forced height showed up as a
+     big blank area after the content, and spilled onto a blank 2nd page. */
+  .cmms-root { min-height: 0 !important; }
 }
 
 @media (max-width: 860px) {
