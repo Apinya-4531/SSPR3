@@ -445,6 +445,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .field label { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
 .field .req { color: var(--status-bad); margin-left: 3px; }
 .field input, .field select, .field textarea { background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; color: var(--text-primary); font-size: 13.5px; font-family: inherit; outline: none; }
+.field-hint { font-size: 11.5px; color: var(--text-tertiary); margin-top: -3px; }
+.field-list { display: flex; flex-direction: column; gap: 8px; }
+.field-list-row { display: flex; gap: 8px; align-items: center; }
+.field-list-row input { flex: 1; }
+.field-list-add { align-self: flex-start; }
 .cmms-root select option { background: var(--bg-panel-raised); color: var(--text-primary); }
 
 .search-select { position: relative; }
@@ -689,9 +694,29 @@ function RecordForm({ fields, values, onChange }) {
         React.createElement("label", null,
             f.label,
             f.required && React.createElement("span", { className: "req" }, "*")),
+        f.hint && React.createElement("div", { className: "field-hint" }, f.hint),
         f.type === "select" ? (React.createElement("select", { value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) },
             React.createElement("option", { value: "", disabled: true }, "\u0E40\u0E25\u0E37\u0E2D\u0E01..."),
-            f.options.map((opt) => (React.createElement("option", { key: opt, value: opt }, f.optionLabels ? f.optionLabels[opt] : opt))))) : f.type === "textarea" ? (React.createElement("textarea", { rows: 3, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })) : (React.createElement("input", { type: f.type, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })))))));
+            f.options.map((opt) => (React.createElement("option", { key: opt, value: opt }, f.optionLabels ? f.optionLabels[opt] : opt))))) : f.type === "textarea" ? (React.createElement("textarea", { rows: 3, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })) : f.type === "list" ? (React.createElement(ListField, { items: values[f.key] && values[f.key].length > 0 ? values[f.key] : [""], placeholder: f.itemPlaceholder, addLabel: f.addLabel || "เพิ่มรายการ", onChange: (next) => onChange(f.key, next) })) : (React.createElement("input", { type: f.type, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })))))));
+}
+// A field whose value is a list of text entries rather than one, with buttons
+// to add another entry or remove one. Used where real-world equipment can
+// have more than one of something on a single record — e.g. a crane with
+// several hoists, each carrying its own fixed-asset tag number.
+function ListField({ items, placeholder, addLabel, onChange }) {
+    return (React.createElement("div", { className: "field-list" },
+        items.map((item, i) => (React.createElement("div", { className: "field-list-row", key: i },
+            React.createElement("input", { type: "text", value: item, placeholder: placeholder, onChange: (e) => {
+                    const next = [...items];
+                    next[i] = e.target.value;
+                    onChange(next);
+                } }),
+            items.length > 1 && (React.createElement("button", { type: "button", className: "icon-btn", onClick: () => onChange(items.filter((_, idx) => idx !== i)) },
+                React.createElement(X, { size: 14 })))))),
+        React.createElement("button", { type: "button", className: "btn btn-outline btn-sm field-list-add", onClick: () => onChange([...items, ""]) },
+            React.createElement(Plus, { size: 13 }),
+            " ",
+            addLabel)));
 }
 /* ------------------------------------------------------------------------ */
 /* printable documents                                                        */
@@ -1213,6 +1238,12 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
         { key: "department", label: "แผนกที่รับผิดชอบ", type: "text" },
         { key: "serialNumber", label: "หมายเลขเครื่อง (Serial No.)", type: "text" },
         { key: "installDate", label: "วันที่ติดตั้ง", type: "date" },
+        {
+            key: "assetNos", label: "Asset No.", type: "list", wide: true,
+            itemPlaceholder: "เช่น 00-1234",
+            addLabel: "เพิ่ม Asset No. (กรณีมีรอกมากกว่า 1 ตัว เช่น เครน)",
+            hint: "อุปกรณ์ที่มีรอกมากกว่า 1 ตัว สามารถเพิ่มได้มากกว่า 1 หมายเลข",
+        },
     ];
     // Only the "add" form gets a รหัสอุปกรณ์ field — the user types their own
     // code instead of the auto AST-xxxx one. Editing is left out of this field
@@ -1238,8 +1269,12 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
     const submit = () => {
         if (!formValues.name)
             return;
+        // Drop blank rows left over from the Asset No. list field (an unused
+        // trailing input, or one the person cleared) before saving.
+        const assetNos = (formValues.assetNos || []).map((s) => (s || "").trim()).filter(Boolean);
+        const cleaned = { ...formValues, assetNos };
         if (modal.mode === "add") {
-            const id = (formValues.id || "").trim();
+            const id = (cleaned.id || "").trim();
             if (!id) {
                 setIdError("กรุณากรอกรหัสอุปกรณ์");
                 return;
@@ -1248,11 +1283,11 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
                 setIdError(`รหัสอุปกรณ์ "${id}" ถูกใช้แล้ว กรุณาใช้รหัสอื่น`);
                 return;
             }
-            const { id: _drop, ...rest } = formValues;
+            const { id: _drop, ...rest } = cleaned;
             onChange([...assets, { id, ...rest }]);
         }
         else {
-            onChange(assets.map((a) => (a.id === modal.id ? { ...a, ...formValues } : a)));
+            onChange(assets.map((a) => (a.id === modal.id ? { ...a, ...cleaned } : a)));
         }
         setModal(null);
     };
@@ -1335,7 +1370,10 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
                     React.createElement("div", { className: "v mono" }, detail.serialNumber)),
                 React.createElement("div", null,
                     React.createElement("div", { className: "k" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E15\u0E34\u0E14\u0E15\u0E31\u0E49\u0E07"),
-                    React.createElement("div", { className: "v" }, formatDate(detail.installDate)))),
+                    React.createElement("div", { className: "v" }, formatDate(detail.installDate))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "k" }, "Asset No."),
+                    React.createElement("div", { className: "v mono" }, detail.assetNos && detail.assetNos.length > 0 ? detail.assetNos.join(", ") : "-"))),
             React.createElement("p", { style: { fontSize: 12.5, color: "var(--text-tertiary)", marginTop: -10, marginBottom: 16 } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E19\u0E35\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E40\u0E1B\u0E34\u0E14\u0E2D\u0E22\u0E39\u0E48\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E2A\u0E16\u0E32\u0E19\u0E30 \u0E43\u0E2B\u0E49\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21/\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02\u0E15\u0E23\u0E07\u0E19\u0E35\u0E49"),
             React.createElement("div", { className: "panel-title", style: { marginBottom: 8 } }, "\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49"),
             pmSchedules.filter((p) => p.assetId === detail.id).length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E41\u0E1C\u0E19 PM" })) : (pmSchedules.filter((p) => p.assetId === detail.id).map((pm) => (React.createElement("div", { key: pm.id, style: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-steel)" } },
