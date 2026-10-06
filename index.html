@@ -1224,7 +1224,7 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
 /* ------------------------------------------------------------------------ */
 /* assets                                                                      */
 /* ------------------------------------------------------------------------ */
-function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint }) {
+function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmChange, onWoChange, onPrint }) {
     const [query, setQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
     const [modal, setModal] = useState(null);
@@ -1245,13 +1245,16 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
             hint: "อุปกรณ์ที่มีรอกมากกว่า 1 ตัว สามารถเพิ่มได้มากกว่า 1 หมายเลข",
         },
     ];
-    // Only the "add" form gets a รหัสอุปกรณ์ field — the user types their own
-    // code instead of the auto AST-xxxx one. Editing is left out of this field
-    // on purpose: the id is what PM schedules and work orders reference, so
-    // changing it after the fact would orphan those links.
-    const formFields = modal && modal.mode === "add"
-        ? [{ key: "id", label: "รหัสอุปกรณ์", type: "text", required: true, wide: true }, ...fields]
-        : fields;
+    // The id is editable in both add and edit mode. On edit, renaming it also
+    // cascades to every PM schedule and work order that references the old id
+    // (see submit()) so those links don't end up orphaned.
+    const idField = {
+        key: "id", label: "รหัสอุปกรณ์", type: "text", required: true, wide: true,
+        hint: modal && modal.mode === "edit"
+            ? "เปลี่ยนรหัสได้ตามต้องการ ระบบจะอัปเดตแผน PM และใบสั่งซ่อมที่อ้างอิงอุปกรณ์นี้ให้อัตโนมัติ"
+            : undefined,
+    };
+    const formFields = [idField, ...fields];
     const filtered = assets.filter((a) => {
         const q = query.toLowerCase();
         const matchQ = !query || a.name.toLowerCase().includes(q) || (a.serialNumber || "").toLowerCase().includes(q);
@@ -1273,12 +1276,12 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
         // trailing input, or one the person cleared) before saving.
         const assetNos = (formValues.assetNos || []).map((s) => (s || "").trim()).filter(Boolean);
         const cleaned = { ...formValues, assetNos };
+        const id = (cleaned.id || "").trim();
+        if (!id) {
+            setIdError("กรุณากรอกรหัสอุปกรณ์");
+            return;
+        }
         if (modal.mode === "add") {
-            const id = (cleaned.id || "").trim();
-            if (!id) {
-                setIdError("กรุณากรอกรหัสอุปกรณ์");
-                return;
-            }
             if (assets.some((a) => a.id.toLowerCase() === id.toLowerCase())) {
                 setIdError(`รหัสอุปกรณ์ "${id}" ถูกใช้แล้ว กรุณาใช้รหัสอื่น`);
                 return;
@@ -1287,7 +1290,19 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPrint
             onChange([...assets, { id, ...rest }]);
         }
         else {
-            onChange(assets.map((a) => (a.id === modal.id ? { ...a, ...cleaned } : a)));
+            const oldId = modal.id;
+            const renamed = id.toLowerCase() !== oldId.toLowerCase();
+            if (renamed && assets.some((a) => a.id.toLowerCase() === id.toLowerCase())) {
+                setIdError(`รหัสอุปกรณ์ "${id}" ถูกใช้แล้ว กรุณาใช้รหัสอื่น`);
+                return;
+            }
+            onChange(assets.map((a) => (a.id === oldId ? { ...a, ...cleaned, id } : a)));
+            if (renamed) {
+                if (onPmChange)
+                    onPmChange(pmSchedules.map((p) => (p.assetId === oldId ? { ...p, assetId: id } : p)));
+                if (onWoChange)
+                    onWoChange(workOrders.map((w) => (w.assetId === oldId ? { ...w, assetId: id } : w)));
+            }
         }
         setModal(null);
     };
@@ -2452,7 +2467,7 @@ export default function App() {
                 React.createElement(Topbar, { title: title, sub: sub, user: currentUser, theme: theme, onToggleTheme: toggleTheme }),
                 React.createElement("div", { className: "content" },
                     page === "dashboard" && (React.createElement(DashboardTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, spareParts: spareParts, setActive: setActiveTab })),
-                    page === "assets" && (React.createElement(AssetsTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, canEdit: true, onChange: updateAssets, onPrint: openPrint })),
+                    page === "assets" && (React.createElement(AssetsTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, canEdit: true, onChange: updateAssets, onPmChange: updatePm, onWoChange: updateWo, onPrint: openPrint })),
                     page === "pm" && (React.createElement(PmTab, { pmSchedules: pmSchedules, assets: assets, users: users, canEdit: true, onChange: updatePm, onLogWorkOrder: logWorkOrder, currentUser: currentUser })),
                     page === "workorders" && (React.createElement(WorkOrdersTab, { workOrders: workOrders, assets: assets, users: users, spareParts: spareParts, stockTxns: stockTxns, canManage: true, currentUser: currentUser, onChange: updateWo, onPartsChange: updateParts, onTxnsChange: updateStockTxns, onPrint: openPrint })),
                     page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onTxnsChange: updateStockTxns, onPrint: openPrint })),
