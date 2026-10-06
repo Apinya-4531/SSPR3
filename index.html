@@ -1257,7 +1257,10 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
     const formFields = [idField, ...fields];
     const filtered = assets.filter((a) => {
         const q = query.toLowerCase();
-        const matchQ = !query || a.name.toLowerCase().includes(q) || (a.serialNumber || "").toLowerCase().includes(q);
+        const matchQ = !query ||
+            a.id.toLowerCase().includes(q) ||
+            a.name.toLowerCase().includes(q) ||
+            (a.serialNumber || "").toLowerCase().includes(q);
         const matchS = !statusFilter || deriveAssetStatus(a.id, workOrders) === statusFilter;
         return matchQ && matchS;
     });
@@ -1314,7 +1317,7 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
         React.createElement("div", { className: "toolbar" },
             React.createElement("div", { className: "search-box" },
                 React.createElement(Search, { size: 15 }),
-                React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07", value: query, onChange: (e) => setQuery(e.target.value) })),
+                React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E23\u0E2B\u0E31\u0E2A, \u0E0A\u0E37\u0E48\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07", value: query, onChange: (e) => setQuery(e.target.value) })),
             React.createElement("select", { className: "select-filter", value: statusFilter, onChange: (e) => setStatusFilter(e.target.value) },
                 React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E30"),
                 Object.keys(ASSET_STATUS).map((k) => React.createElement("option", { key: k, value: k }, ASSET_STATUS[k]))),
