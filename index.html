@@ -415,9 +415,9 @@ const STYLE = `
 .icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 5px; background: transparent; border: 1px solid var(--border-steel); color: var(--text-secondary); cursor: pointer; }
 .icon-btn:hover { color: var(--text-primary); background: var(--bg-panel-raised); }
 
-.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
-.kpi-card { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 16px 18px; border-left: 3px solid var(--kpi-color, var(--accent-amber)); }
-.kpi-value { font-size: 30px; font-weight: 600; line-height: 1; color: var(--text-primary); }
+.kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 20px; }
+.kpi-card { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 14px 16px; border-left: 3px solid var(--kpi-color, var(--accent-amber)); min-width: 0; }
+.kpi-value { font-size: 24px; font-weight: 600; line-height: 1.15; color: var(--text-primary); overflow-wrap: break-word; }
 .kpi-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 8px; }
 
 .panel { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 18px; }
