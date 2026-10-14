@@ -1119,13 +1119,26 @@ function Topbar({ title, sub, user, theme, onToggleTheme }) {
 const PIE_COLORS = { NORMAL: "var(--status-good)", MAINT: "var(--status-warn)", DOWN: "var(--status-bad)" };
 const TYPE_COLORS = { PM: "var(--status-good)", CORRECTIVE: "var(--status-warn)", BREAKDOWN: "var(--status-bad)" };
 function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }) {
+    const [yearFilter, setYearFilter] = useState("");
+    // Years are picked off each work order's createdDate (a plain Gregorian
+    // ISO string), but shown to the person as Buddhist-era years to match
+    // every date already displayed elsewhere in the app (formatDate's th-TH
+    // locale defaults to the Buddhist calendar).
+    const years = useMemo(() => {
+        const set = new Set(workOrders.map((w) => (w.createdDate || "").slice(0, 4)).filter(Boolean));
+        set.add(String(new Date().getFullYear()));
+        return [...set].sort((a, b) => b.localeCompare(a));
+    }, [workOrders]);
+    // History/trend figures (counts, costs, lists of past work) narrow to the
+    // selected year; "current state" figures (open-right-now equipment status,
+    // outstanding PM, low stock, what's due next) stay all-time regardless —
+    // filtering those by a past year would just make live problems disappear.
+    const yearWO = useMemo(() => (yearFilter ? workOrders.filter((w) => (w.createdDate || "").slice(0, 4) === yearFilter) : workOrders), [workOrders, yearFilter]);
     const totalAssets = assets.length;
-    const openWO = workOrders.filter((w) => w.status === "OPEN" || w.status === "INPROGRESS").length;
+    const openWO = yearWO.filter((w) => w.status === "OPEN" || w.status === "INPROGRESS").length;
     const overduePM = pmSchedules.filter((p) => pmStatusOf(p) === "overdue").length;
     const lowParts = spareParts.filter((p) => partStatusOf(p) !== "ok").length;
-    // Costs are only ever recorded when a work order is closed, so summing
-    // every work order's cost list is naturally an all-time maintenance total.
-    const totalCost = useMemo(() => workOrders.reduce((sum, w) => sum + sumCosts(w.costs), 0), [workOrders]);
+    const totalCost = useMemo(() => yearWO.reduce((sum, w) => sum + sumCosts(w.costs), 0), [yearWO]);
     const assetDist = useMemo(() => {
         const counts = {};
         assets.forEach((a) => {
@@ -1143,32 +1156,49 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
         return Object.keys(PRIORITY).map((k) => ({ name: PRIORITY[k], value: counts[k] || 0 }));
     }, [workOrders]);
     const upcomingPM = useMemo(() => [...pmSchedules].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue)).slice(0, 5), [pmSchedules]);
-    const recentWO = useMemo(() => [...workOrders].sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)).slice(0, 5), [workOrders]);
+    const recentWO = useMemo(() => [...yearWO].sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)).slice(0, 5), [yearWO]);
     const assetName = (id) => assets.find((a) => a.id === id)?.name || id;
     // Which equipment gets sent for repair the most, as a share of all work orders raised
+    // — and what that equipment has cost in total across those work orders.
     const repairFrequency = useMemo(() => {
         const counts = {};
-        workOrders.forEach((w) => { counts[w.assetId] = (counts[w.assetId] || 0) + 1; });
-        const total = workOrders.length || 1;
+        const costs = {};
+        yearWO.forEach((w) => {
+            counts[w.assetId] = (counts[w.assetId] || 0) + 1;
+            costs[w.assetId] = (costs[w.assetId] || 0) + sumCosts(w.costs);
+        });
+        const total = yearWO.length || 1;
         return assets
-            .map((a) => ({ id: a.id, name: a.name, count: counts[a.id] || 0, pct: Math.round(((counts[a.id] || 0) / total) * 100) }))
+            .map((a) => ({
+            id: a.id, name: a.name,
+            count: counts[a.id] || 0,
+            pct: Math.round(((counts[a.id] || 0) / total) * 100),
+            cost: costs[a.id] || 0,
+        }))
             .filter((a) => a.count > 0)
             .sort((a, b) => b.count - a.count)
             .slice(0, 6);
-    }, [assets, workOrders]);
+    }, [assets, yearWO]);
     // What proportion of reported issues are breakdowns vs. scheduled PM vs. general corrective work
     const woTypeDist = useMemo(() => {
         const counts = {};
-        workOrders.forEach((w) => { counts[w.type] = (counts[w.type] || 0) + 1; });
-        const total = workOrders.length || 1;
+        yearWO.forEach((w) => { counts[w.type] = (counts[w.type] || 0) + 1; });
+        const total = yearWO.length || 1;
         return Object.keys(WO_TYPE).map((k) => ({
             key: k,
             name: WO_TYPE[k],
             value: counts[k] || 0,
             pct: Math.round(((counts[k] || 0) / total) * 100),
         }));
-    }, [workOrders]);
+    }, [yearWO]);
     return (React.createElement("div", null,
+        React.createElement("div", { className: "toolbar", style: { marginBottom: 14 } },
+            React.createElement("div", { className: "spacer" }),
+            React.createElement("select", { className: "select-filter", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) },
+                React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E1B\u0E35"),
+                years.map((y) => React.createElement("option", { key: y, value: y },
+                    "\u0E1B\u0E35 ",
+                    Number(y) + 543)))),
         React.createElement("div", { className: "kpi-row" },
             React.createElement(KpiCard, { value: totalAssets, label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A", color: "var(--accent-amber)" }),
             React.createElement(KpiCard, { value: openWO, label: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08", color: "var(--status-warn)" }),
@@ -1232,7 +1262,11 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
                             a.pct,
                             "%)")),
                     React.createElement("div", { style: { height: 6, background: "var(--bg-input)", borderRadius: 4, overflow: "hidden" } },
-                        React.createElement("div", { style: { width: `${a.pct}%`, height: "100%", background: "var(--accent-amber)", borderRadius: 4 } }))))))),
+                        React.createElement("div", { style: { width: `${a.pct}%`, height: "100%", background: "var(--accent-amber)", borderRadius: 4 } })),
+                    a.cost > 0 && (React.createElement("div", { className: "mono", style: { textAlign: "right", fontSize: 11.5, color: "var(--status-good)", marginTop: 4 } },
+                        "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E23\u0E27\u0E21 ",
+                        formatCurrency(a.cost),
+                        " \u0E1A\u0E32\u0E17"))))))),
             React.createElement("div", { className: "panel" },
                 React.createElement("div", { className: "panel-title" }, "\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
                 workOrders.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21" })) : (React.createElement(React.Fragment, null,
@@ -2185,6 +2219,26 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         .filter((t) => !txnFilter || t.type === txnFilter)
         .filter((t) => !monthFilter || (t.date || "").slice(0, 7) === monthFilter)
         .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const exportItemsExcel = () => {
+        const rows = filteredItems.map((p) => ({
+            "รหัส": p.id,
+            "รหัสพัสดุ": p.code || "",
+            "ชื่อพัสดุ": p.name,
+            "หมวดหมู่": p.category || "",
+            "คงเหลือ": Number(p.quantity || 0),
+            "หน่วยนับ": p.unit || "",
+            "จุดสั่งซื้อขั้นต่ำ": Number(p.minStock || 0),
+            "ที่จัดเก็บ": p.location || "",
+            "ราคาต่อหน่วย": Number(p.unitPrice || 0),
+            "มูลค่ารวม": Number(p.unitPrice || 0) * Number(p.quantity || 0),
+            "สถานะ": statusLabel[p._status],
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "รายการพัสดุ");
+        XLSX.writeFile(wb, `รายการพัสดุ_${today()}.xlsx`);
+    };
     const exportHistoryExcel = () => {
         const rows = sortedTxns.map((t) => ({
             "เลขที่": t.id,
@@ -2230,6 +2284,9 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                 React.createElement("input", { type: "month", className: "select-filter", value: monthFilter, onChange: (e) => setMonthFilter(e.target.value) }),
                 monthFilter && React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setMonthFilter("") }, "\u0E25\u0E49\u0E32\u0E07\u0E40\u0E14\u0E37\u0E2D\u0E19"))),
             React.createElement("div", { className: "spacer" }),
+            subView === "items" && (React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportItemsExcel, disabled: filteredItems.length === 0 },
+                React.createElement(Download, { size: 14 }),
+                " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel")),
             subView === "history" && (React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportHistoryExcel, disabled: sortedTxns.length === 0 },
                 React.createElement(Download, { size: 14 }),
                 " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel")),
