@@ -153,6 +153,10 @@ const formatDateTime = (d) => {
         return "-";
     }
 };
+const formatCurrency = (n) => (Number(n) || 0).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// Work orders carry their closing costs as a list of { label, amount } rows
+// (labor, outside contractor, transport, etc.) — this totals one such list.
+const sumCosts = (costs) => (costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
 const genId = (prefix, list) => {
     const existing = new Set(list.map((x) => x.id));
     let n = list.length + 1;
@@ -406,7 +410,7 @@ const STYLE = `
 .icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 5px; background: transparent; border: 1px solid var(--border-steel); color: var(--text-secondary); cursor: pointer; }
 .icon-btn:hover { color: var(--text-primary); background: var(--bg-panel-raised); }
 
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .kpi-card { background: var(--bg-panel); border: 1px solid var(--border-steel); border-radius: 8px; padding: 16px 18px; border-left: 3px solid var(--kpi-color, var(--accent-amber)); }
 .kpi-value { font-size: 30px; font-weight: 600; line-height: 1; color: var(--text-primary); }
 .kpi-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 8px; }
@@ -506,6 +510,12 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .parts-row .search-select { flex: 2; }
 .parts-row input { flex: 1; width: 0; background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; color: var(--text-primary); font-size: 13.5px; font-family: inherit; outline: none; }
 .parts-row input:focus { border-color: var(--accent-amber); }
+.cost-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.cost-row input { background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 9px 10px; color: var(--text-primary); font-size: 13.5px; font-family: inherit; outline: none; }
+.cost-row input:focus { border-color: var(--accent-amber); }
+.cost-row .cost-label { flex: 2; }
+.cost-row .cost-amount { flex: 1; width: 0; }
+.cost-total { display: flex; justify-content: flex-end; gap: 8px; font-size: 13.5px; font-weight: 600; margin-top: 4px; }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; margin-bottom: 16px; }
 .detail-grid .k { color: var(--text-tertiary); font-size: 11.5px; margin-bottom: 3px; }
@@ -796,7 +806,23 @@ function WoPrint({ data, assets, spareParts, printedAt }) {
                                     part?.unit || "")));
                         }),
                         React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "4", style: { textAlign: "center", fontStyle: "italic", color: "#999", fontSize: 11 } }, "** \u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E15\u0E32\u0E21\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E19\u0E35\u0E49 **"))))))),
+                            React.createElement("td", { colSpan: "4", style: { textAlign: "center", fontStyle: "italic", color: "#999", fontSize: 11 } }, "** \u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E15\u0E32\u0E21\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E19\u0E35\u0E49 **")))))),
+            data.costs && data.costs.length > 0 && (React.createElement(React.Fragment, null,
+                React.createElement("p", { style: { fontWeight: 600, fontSize: 12, marginBottom: 5 } }, "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
+                React.createElement("table", null,
+                    React.createElement("thead", null,
+                        React.createElement("tr", null,
+                            React.createElement("th", { style: { width: "10%" } }, "\u0E25\u0E33\u0E14\u0E31\u0E1A"),
+                            React.createElement("th", null, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"),
+                            React.createElement("th", { style: { width: "22%" } }, "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 (\u0E1A\u0E32\u0E17)"))),
+                    React.createElement("tbody", null,
+                        data.costs.map((c, i) => (React.createElement("tr", { key: i },
+                            React.createElement("td", null, i + 1),
+                            React.createElement("td", null, c.label),
+                            React.createElement("td", null, formatCurrency(c.amount))))),
+                        React.createElement("tr", null,
+                            React.createElement("td", { colSpan: "2", style: { textAlign: "right", fontWeight: 600 } }, "\u0E23\u0E27\u0E21"),
+                            React.createElement("td", { style: { fontWeight: 600 } }, formatCurrency(sumCosts(data.costs))))))))),
         React.createElement("div", { className: "print-signatures" },
             React.createElement("div", { className: "print-sign-block" },
                 React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21"),
@@ -1097,6 +1123,9 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
     const openWO = workOrders.filter((w) => w.status === "OPEN" || w.status === "INPROGRESS").length;
     const overduePM = pmSchedules.filter((p) => pmStatusOf(p) === "overdue").length;
     const lowParts = spareParts.filter((p) => partStatusOf(p) !== "ok").length;
+    // Costs are only ever recorded when a work order is closed, so summing
+    // every work order's cost list is naturally an all-time maintenance total.
+    const totalCost = useMemo(() => workOrders.reduce((sum, w) => sum + sumCosts(w.costs), 0), [workOrders]);
     const assetDist = useMemo(() => {
         const counts = {};
         assets.forEach((a) => {
@@ -1144,7 +1173,8 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
             React.createElement(KpiCard, { value: totalAssets, label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A", color: "var(--accent-amber)" }),
             React.createElement(KpiCard, { value: openWO, label: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08", color: "var(--status-warn)" }),
             React.createElement(KpiCard, { value: overduePM, label: "\u0E41\u0E1C\u0E19 PM \u0E17\u0E35\u0E48\u0E40\u0E01\u0E34\u0E19\u0E01\u0E33\u0E2B\u0E19\u0E14", color: "var(--status-bad)" }),
-            React.createElement(KpiCard, { value: lowParts, label: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14 / \u0E2B\u0E21\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01", color: "var(--status-neutral)" })),
+            React.createElement(KpiCard, { value: lowParts, label: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14 / \u0E2B\u0E21\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01", color: "var(--status-neutral)" }),
+            React.createElement(KpiCard, { value: `${formatCurrency(totalCost)} บาท`, label: "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", color: "var(--status-good)" })),
         React.createElement("div", { className: "grid-2", style: { marginBottom: 14 } },
             React.createElement("div", { className: "panel" },
                 React.createElement("div", { className: "panel-title" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14"),
@@ -1425,6 +1455,9 @@ function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, 
     const [statusFilter, setStatusFilter] = useState("");
     const [modal, setModal] = useState(null);
     const [formValues, setFormValues] = useState({});
+    const [doneModal, setDoneModal] = useState(null);
+    const [doneDate, setDoneDate] = useState("");
+    const [doneCosts, setDoneCosts] = useState([{ label: "", amount: "" }]);
     const assetOptions = assets.map((a) => a.id);
     const assetLabels = Object.fromEntries(assets.map((a) => [a.id, a.name]));
     const userNames = users.map((u) => u.name);
@@ -1458,9 +1491,23 @@ function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, 
         setModal(null);
     };
     const remove = (id) => onChange(pmSchedules.filter((p) => p.id !== id));
-    const markDone = (p) => {
-        const nextDue = addDays(today(), p.frequencyDays);
-        onChange(pmSchedules.map((x) => (x.id === p.id ? { ...x, lastDone: today(), nextDue } : x)));
+    // Marking a PM plan done opens a small modal for the completion date and
+    // any costs (labor, parts bought outside the store, etc.) instead of
+    // silently filing a finished work order with nothing in it — the work
+    // order isn't created until this modal is confirmed.
+    const openMarkDone = (p) => {
+        setDoneDate(today());
+        setDoneCosts([{ label: "", amount: "" }]);
+        setDoneModal(p);
+    };
+    const submitMarkDone = () => {
+        const p = doneModal;
+        const doneOn = doneDate || today();
+        const nextDue = addDays(doneOn, p.frequencyDays);
+        onChange(pmSchedules.map((x) => (x.id === p.id ? { ...x, lastDone: doneOn, nextDue } : x)));
+        const validCosts = doneCosts
+            .filter((r) => r.label && r.label.trim() && Number(r.amount) > 0)
+            .map((r) => ({ label: r.label.trim(), amount: Number(r.amount) }));
         onLogWorkOrder({
             assetId: p.assetId,
             type: "PM",
@@ -1470,11 +1517,13 @@ function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, 
             assignedTo: p.assignedTo || currentUser.name,
             priority: "MED",
             status: "DONE",
-            createdDate: today(),
-            completedDate: today(),
+            createdDate: doneOn,
+            completedDate: doneOn,
             partsUsed: [],
+            costs: validCosts,
             comments: [],
         });
+        setDoneModal(null);
     };
     return (React.createElement("div", null,
         React.createElement("div", { className: "toolbar" },
@@ -1513,7 +1562,7 @@ function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, 
                         React.createElement(Badge, { text: statusLabel[p._status], tone: toneMap.pm[p._status] })),
                     React.createElement("td", null,
                         React.createElement("div", { className: "row-actions" },
-                            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => markDone(p) },
+                            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openMarkDone(p) },
                                 React.createElement(Check, { size: 13 }),
                                 " \u0E17\u0E33\u0E41\u0E25\u0E49\u0E27"),
                             canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
@@ -1525,7 +1574,28 @@ function PmTab({ pmSchedules, assets, users, canEdit, onChange, onLogWorkOrder, 
                 React.createElement("button", { className: "btn btn-primary", onClick: submit },
                     React.createElement(Check, { size: 15 }),
                     " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
-            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) })))));
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+        doneModal && (React.createElement(Modal, { title: `บันทึกงาน PM เสร็จสิ้น: ${doneModal.taskName}`, onClose: () => setDoneModal(null), wide: true, footer: React.createElement(React.Fragment, null,
+                React.createElement("button", { className: "btn btn-outline", onClick: () => setDoneModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                React.createElement("button", { className: "btn btn-primary", onClick: submitMarkDone },
+                    React.createElement(Check, { size: 15 }),
+                    " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21")) },
+            React.createElement("div", { className: "field", style: { marginBottom: 16, maxWidth: 220 } },
+                React.createElement("label", null, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E34\u0E49\u0E19"),
+                React.createElement("input", { type: "date", value: doneDate, onChange: (e) => setDoneDate(e.target.value) })),
+            React.createElement("p", { style: { fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 } }, "\u0E23\u0E30\u0E1A\u0E38\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E02\u0E2D\u0E07\u0E07\u0E32\u0E19\u0E19\u0E35\u0E49 (\u0E16\u0E49\u0E32\u0E21\u0E35) \u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07 \u0E04\u0E48\u0E32\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07 \u0E04\u0E48\u0E32\u0E08\u0E49\u0E32\u0E07\u0E0A\u0E48\u0E32\u0E07\u0E20\u0E32\u0E22\u0E19\u0E2D\u0E01 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E43\u0E2B\u0E49\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E19\u0E35\u0E49\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E01\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01"),
+            doneCosts.map((row, i) => (React.createElement("div", { className: "cost-row", key: i },
+                React.createElement("input", { className: "cost-label", type: "text", placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07", value: row.label, onChange: (e) => { const c = [...doneCosts]; c[i] = { ...c[i], label: e.target.value }; setDoneCosts(c); } }),
+                React.createElement("input", { className: "cost-amount", type: "number", min: "0", placeholder: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 (\u0E1A\u0E32\u0E17)", value: row.amount, onChange: (e) => { const c = [...doneCosts]; c[i] = { ...c[i], amount: e.target.value }; setDoneCosts(c); } }),
+                React.createElement("button", { className: "icon-btn", onClick: () => setDoneCosts(doneCosts.filter((_, idx) => idx !== i)) },
+                    React.createElement(X, { size: 14 }))))),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setDoneCosts([...doneCosts, { label: "", amount: "" }]) },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
+            React.createElement("div", { className: "cost-total" },
+                "\u0E23\u0E27\u0E21 ",
+                formatCurrency(sumCosts(doneCosts.map((r) => ({ amount: r.amount })))),
+                " \u0E1A\u0E32\u0E17")))));
 }
 /* ------------------------------------------------------------------------ */
 /* work orders                                                                 */
@@ -1538,9 +1608,11 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
     const [detail, setDetail] = useState(null);
     const [completeModal, setCompleteModal] = useState(null);
     const [completeParts, setCompleteParts] = useState([{ partId: "", qty: 1 }]);
+    const [completeCosts, setCompleteCosts] = useState([{ label: "", amount: "" }]);
     const [completeError, setCompleteError] = useState("");
     const [editCompleteModal, setEditCompleteModal] = useState(null);
     const [editCompleteParts, setEditCompleteParts] = useState([{ partId: "", qty: 1 }]);
+    const [editCompleteCosts, setEditCompleteCosts] = useState([{ label: "", amount: "" }]);
     const [editCompleteDate, setEditCompleteDate] = useState("");
     const [editCompleteError, setEditCompleteError] = useState("");
     const [commentText, setCommentText] = useState("");
@@ -1572,7 +1644,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
         if (modal.mode === "add") {
             const id = genId("WO", workOrders);
             onChange([...workOrders, {
-                    id, status: "OPEN", createdDate: today(), completedDate: null, partsUsed: [], comments: [],
+                    id, status: "OPEN", createdDate: today(), completedDate: null, partsUsed: [], costs: [], comments: [],
                     ...formValues, reportedBy: formValues.reportedBy || currentUser.name,
                 }]);
         }
@@ -1594,7 +1666,7 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
         setDetail(updated);
         setCommentText("");
     };
-    const openComplete = (w) => { setCompleteParts([{ partId: "", qty: 1 }]); setCompleteError(""); setCompleteModal(w); };
+    const openComplete = (w) => { setCompleteParts([{ partId: "", qty: 1 }]); setCompleteCosts([{ label: "", amount: "" }]); setCompleteError(""); setCompleteModal(w); };
     const updateCompleteRow = (i, patch) => {
         const c = [...completeParts];
         c[i] = { ...c[i], ...patch };
@@ -1619,7 +1691,14 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
             return;
         }
         setCompleteError("");
-        const updated = { ...completeModal, status: "DONE", completedDate: today(), partsUsed: Object.entries(requested).map(([partId, qty]) => ({ partId, qty })) };
+        const validCosts = completeCosts
+            .filter((r) => r.label && r.label.trim() && Number(r.amount) > 0)
+            .map((r) => ({ label: r.label.trim(), amount: Number(r.amount) }));
+        const updated = {
+            ...completeModal, status: "DONE", completedDate: today(),
+            partsUsed: Object.entries(requested).map(([partId, qty]) => ({ partId, qty })),
+            costs: validCosts,
+        };
         onChange(workOrders.map((x) => (x.id === completeModal.id ? updated : x)));
         if (Object.keys(requested).length > 0) {
             const newParts = spareParts.map((sp) => {
@@ -1663,6 +1742,8 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
     const openEditComplete = (w) => {
         const rows = w.partsUsed && w.partsUsed.length > 0 ? w.partsUsed.map((pu) => ({ partId: pu.partId, qty: pu.qty })) : [{ partId: "", qty: 1 }];
         setEditCompleteParts(rows);
+        const costRows = w.costs && w.costs.length > 0 ? w.costs.map((c) => ({ label: c.label, amount: c.amount })) : [{ label: "", amount: "" }];
+        setEditCompleteCosts(costRows);
         setEditCompleteDate(w.completedDate || today());
         setEditCompleteError("");
         setEditCompleteModal(w);
@@ -1720,7 +1801,14 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
             txnList = [...txnList, txn];
         });
         onTxnsChange(txnList);
-        const updatedWo = { ...wo, completedDate: editCompleteDate || today(), partsUsed: Object.entries(newRequested).map(([partId, qty]) => ({ partId, qty })) };
+        const validCosts = editCompleteCosts
+            .filter((r) => r.label && r.label.trim() && Number(r.amount) > 0)
+            .map((r) => ({ label: r.label.trim(), amount: Number(r.amount) }));
+        const updatedWo = {
+            ...wo, completedDate: editCompleteDate || today(),
+            partsUsed: Object.entries(newRequested).map(([partId, qty]) => ({ partId, qty })),
+            costs: validCosts,
+        };
         onChange(workOrders.map((x) => (x.id === wo.id ? updatedWo : x)));
         setDetail(updatedWo);
         setEditCompleteModal(null);
@@ -1815,6 +1903,17 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
                         " ",
                         part?.unit || "");
                 }))),
+            detail.costs && detail.costs.length > 0 && (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "panel-title", style: { marginBottom: 8 } }, "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
+                detail.costs.map((c, i) => (React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "4px 0" } },
+                    React.createElement("span", null, c.label),
+                    React.createElement("span", { className: "mono" },
+                        formatCurrency(c.amount),
+                        " \u0E1A\u0E32\u0E17")))),
+                React.createElement("div", { className: "cost-total" },
+                    "\u0E23\u0E27\u0E21 ",
+                    formatCurrency(sumCosts(detail.costs)),
+                    " \u0E1A\u0E32\u0E17"))),
             React.createElement("div", { style: { display: "flex", gap: 10, flexWrap: "wrap", margin: "16px 0" } },
                 detail.status === "OPEN" && React.createElement("button", { className: "btn btn-outline", onClick: () => setStatus(detail, "INPROGRESS") }, "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23"),
                 (detail.status === "OPEN" || detail.status === "INPROGRESS") && React.createElement("button", { className: "btn btn-primary", onClick: () => openComplete(detail) },
@@ -1864,7 +1963,20 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
                 " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48"),
             completeError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
                 React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
-                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, completeError))))),
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, completeError))),
+            React.createElement("p", { style: { fontSize: 13, color: "var(--text-secondary)", margin: "18px 0 14px" } }, "\u0E23\u0E30\u0E1A\u0E38\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E02\u0E2D\u0E07\u0E07\u0E32\u0E19\u0E19\u0E35\u0E49 (\u0E16\u0E49\u0E32\u0E21\u0E35) \u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07 \u0E04\u0E48\u0E32\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07 \u0E04\u0E48\u0E32\u0E08\u0E49\u0E32\u0E07\u0E0A\u0E48\u0E32\u0E07\u0E20\u0E32\u0E22\u0E19\u0E2D\u0E01"),
+            completeCosts.map((row, i) => (React.createElement("div", { className: "cost-row", key: i },
+                React.createElement("input", { className: "cost-label", type: "text", placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07", value: row.label, onChange: (e) => { const c = [...completeCosts]; c[i] = { ...c[i], label: e.target.value }; setCompleteCosts(c); } }),
+                React.createElement("input", { className: "cost-amount", type: "number", min: "0", placeholder: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 (\u0E1A\u0E32\u0E17)", value: row.amount, onChange: (e) => { const c = [...completeCosts]; c[i] = { ...c[i], amount: e.target.value }; setCompleteCosts(c); } }),
+                React.createElement("button", { className: "icon-btn", onClick: () => setCompleteCosts(completeCosts.filter((_, idx) => idx !== i)) },
+                    React.createElement(X, { size: 14 }))))),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setCompleteCosts([...completeCosts, { label: "", amount: "" }]) },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
+            React.createElement("div", { className: "cost-total" },
+                "\u0E23\u0E27\u0E21 ",
+                formatCurrency(sumCosts(completeCosts.map((r) => ({ amount: r.amount })))),
+                " \u0E1A\u0E32\u0E17"))),
         editCompleteModal && (React.createElement(Modal, { title: `แก้ไขข้อมูลปิดงาน: ${editCompleteModal.title}`, onClose: () => { setEditCompleteModal(null); setEditCompleteError(""); }, wide: true, footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => { setEditCompleteModal(null); setEditCompleteError(""); } }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
                 React.createElement("button", { className: "btn btn-primary", onClick: submitEditComplete },
@@ -1884,7 +1996,20 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
                 " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48"),
             editCompleteError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
                 React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
-                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, editCompleteError)))))));
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, editCompleteError))),
+            React.createElement("p", { style: { fontSize: 13, color: "var(--text-secondary)", margin: "18px 0 14px" } }, "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E02\u0E2D\u0E07\u0E07\u0E32\u0E19\u0E19\u0E35\u0E49"),
+            editCompleteCosts.map((row, i) => (React.createElement("div", { className: "cost-row", key: i },
+                React.createElement("input", { className: "cost-label", type: "text", placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07", value: row.label, onChange: (e) => { const c = [...editCompleteCosts]; c[i] = { ...c[i], label: e.target.value }; setEditCompleteCosts(c); } }),
+                React.createElement("input", { className: "cost-amount", type: "number", min: "0", placeholder: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 (\u0E1A\u0E32\u0E17)", value: row.amount, onChange: (e) => { const c = [...editCompleteCosts]; c[i] = { ...c[i], amount: e.target.value }; setEditCompleteCosts(c); } }),
+                React.createElement("button", { className: "icon-btn", onClick: () => setEditCompleteCosts(editCompleteCosts.filter((_, idx) => idx !== i)) },
+                    React.createElement(X, { size: 14 }))))),
+            React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setEditCompleteCosts([...editCompleteCosts, { label: "", amount: "" }]) },
+                React.createElement(Plus, { size: 14 }),
+                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
+            React.createElement("div", { className: "cost-total" },
+                "\u0E23\u0E27\u0E21 ",
+                formatCurrency(sumCosts(editCompleteCosts.map((r) => ({ amount: r.amount })))),
+                " \u0E1A\u0E32\u0E17")))));
 }
 /* ------------------------------------------------------------------------ */
 /* inventory (items + receive/issue ledger)                                   */
