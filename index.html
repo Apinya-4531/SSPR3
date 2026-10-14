@@ -187,7 +187,12 @@ function partStatusOf(part) {
 //   - Any open or in-progress BREAKDOWN work order  -> DOWN (unusable)
 //   - Any IN-PROGRESS PM/CORRECTIVE work order       -> MAINT (being worked on)
 //   - Only OPEN (not yet started) PM/CORRECTIVE, or no open work orders -> NORMAL
-function deriveAssetStatus(assetId, workOrders) {
+function deriveAssetStatus(assetId, workOrders, operationalStatus) {
+    // Equipment taken out of service (retired, decommissioned — not just
+    // mid-repair) is marked that way directly on the asset record, and that
+    // always wins over whatever the open work orders would otherwise imply.
+    if (operationalStatus === "STOPPED")
+        return "DOWN";
     const relevant = workOrders.filter((w) => w.assetId === assetId && (w.status === "OPEN" || w.status === "INPROGRESS"));
     if (relevant.length === 0)
         return "NORMAL";
@@ -1142,7 +1147,7 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
     const assetDist = useMemo(() => {
         const counts = {};
         assets.forEach((a) => {
-            const s = deriveAssetStatus(a.id, workOrders);
+            const s = deriveAssetStatus(a.id, workOrders, a.operationalStatus);
             counts[s] = (counts[s] || 0) + 1;
         });
         return Object.keys(ASSET_STATUS).map((k) => ({ name: ASSET_STATUS[k], value: counts[k] || 0, key: k }));
@@ -1298,6 +1303,11 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
     const fields = [
         { key: "name", label: "ชื่ออุปกรณ์", type: "text", required: true, wide: true },
         { key: "type", label: "ประเภทอุปกรณ์", type: "select", options: ASSET_TYPES },
+        {
+            key: "operationalStatus", label: "สถานะการใช้งาน", type: "select",
+            options: ["ACTIVE", "STOPPED"],
+            optionLabels: { ACTIVE: "ใช้งานอยู่ (สถานะคำนวณอัตโนมัติตามใบสั่งซ่อม)", STOPPED: "หยุดใช้งาน (ปลดระวาง)" },
+        },
         { key: "location", label: "ตำแหน่งที่ใช้งาน", type: "text" },
         { key: "department", label: "แผนกที่รับผิดชอบ", type: "text" },
         { key: "serialNumber", label: "หมายเลขเครื่อง (Serial No.)", type: "text" },
@@ -1325,7 +1335,7 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
             a.id.toLowerCase().includes(q) ||
             a.name.toLowerCase().includes(q) ||
             (a.serialNumber || "").toLowerCase().includes(q);
-        const matchS = !statusFilter || deriveAssetStatus(a.id, workOrders) === statusFilter;
+        const matchS = !statusFilter || deriveAssetStatus(a.id, workOrders, a.operationalStatus) === statusFilter;
         return matchQ && matchS;
     });
     const nextPmFor = (assetId) => {
@@ -1334,8 +1344,8 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
             return null;
         return [...list].sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue))[0];
     };
-    const openAdd = () => { setFormValues({}); setIdError(""); setModal({ mode: "add" }); };
-    const openEdit = (a) => { setFormValues(a); setIdError(""); setModal({ mode: "edit", id: a.id }); };
+    const openAdd = () => { setFormValues({ operationalStatus: "ACTIVE" }); setIdError(""); setModal({ mode: "add" }); };
+    const openEdit = (a) => { setFormValues({ ...a, operationalStatus: a.operationalStatus || "ACTIVE" }); setIdError(""); setModal({ mode: "edit", id: a.id }); };
     const submit = () => {
         if (!formValues.name)
             return;
@@ -1402,7 +1412,7 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
                         React.createElement("th", null))),
                 React.createElement("tbody", null, filtered.map((a) => {
                     const npm = nextPmFor(a.id);
-                    const liveStatus = deriveAssetStatus(a.id, workOrders);
+                    const liveStatus = deriveAssetStatus(a.id, workOrders, a.operationalStatus);
                     return (React.createElement("tr", { key: a.id, className: "row-clickable", onClick: () => setDetail(a) },
                         React.createElement("td", { className: "mono" }, a.id),
                         React.createElement("td", null,
@@ -1435,9 +1445,9 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
                     React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C"),
                     React.createElement("div", { className: "v mono" }, detail.id)),
                 React.createElement("div", null,
-                    React.createElement("div", { className: "k" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30 (\u0E04\u0E33\u0E19\u0E27\u0E13\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34)"),
+                    React.createElement("div", { className: "k" }, "\u0E2A\u0E16\u0E32\u0E19\u0E30"),
                     React.createElement("div", { className: "v" },
-                        React.createElement(Badge, { text: ASSET_STATUS[deriveAssetStatus(detail.id, workOrders)], tone: toneMap.asset[deriveAssetStatus(detail.id, workOrders)] }))),
+                        React.createElement(Badge, { text: ASSET_STATUS[deriveAssetStatus(detail.id, workOrders, detail.operationalStatus)], tone: toneMap.asset[deriveAssetStatus(detail.id, workOrders, detail.operationalStatus)] }))),
                 React.createElement("div", null,
                     React.createElement("div", { className: "k" }, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
                     React.createElement("div", { className: "v" }, detail.type)),
@@ -1456,7 +1466,7 @@ function AssetsTab({ assets, pmSchedules, workOrders, canEdit, onChange, onPmCha
                 React.createElement("div", null,
                     React.createElement("div", { className: "k" }, "Asset No."),
                     React.createElement("div", { className: "v mono" }, detail.assetNos && detail.assetNos.length > 0 ? detail.assetNos.join(", ") : "-"))),
-            React.createElement("p", { style: { fontSize: 12.5, color: "var(--text-tertiary)", marginTop: -10, marginBottom: 16 } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E19\u0E35\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E40\u0E1B\u0E34\u0E14\u0E2D\u0E22\u0E39\u0E48\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E2A\u0E16\u0E32\u0E19\u0E30 \u0E43\u0E2B\u0E49\u0E41\u0E08\u0E49\u0E07\u0E0B\u0E48\u0E2D\u0E21/\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E41\u0E01\u0E49\u0E44\u0E02\u0E15\u0E23\u0E07\u0E19\u0E35\u0E49"),
+            React.createElement("p", { style: { fontSize: 12.5, color: "var(--text-tertiary)", marginTop: -10, marginBottom: 16 } }, "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E19\u0E35\u0E49\u0E04\u0E33\u0E19\u0E27\u0E13\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E48\u0E2D\u0E21\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E40\u0E1B\u0E34\u0E14\u0E2D\u0E22\u0E39\u0E48\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49 \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E1B\u0E47\u0E19 \"\u0E2B\u0E22\u0E38\u0E14\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\" \u0E40\u0E2D\u0E07\u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E1B\u0E25\u0E14\u0E23\u0E30\u0E27\u0E32\u0E07\u0E41\u0E25\u0E49\u0E27"),
             React.createElement("div", { className: "panel-title", style: { marginBottom: 8 } }, "\u0E41\u0E1C\u0E19\u0E1A\u0E33\u0E23\u0E38\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E02\u0E2D\u0E07\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E19\u0E35\u0E49"),
             pmSchedules.filter((p) => p.assetId === detail.id).length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E41\u0E1C\u0E19 PM" })) : (pmSchedules.filter((p) => p.assetId === detail.id).map((pm) => (React.createElement("div", { key: pm.id, style: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-steel)" } },
                 React.createElement("span", { style: { fontSize: 13.5 } }, pm.taskName),
