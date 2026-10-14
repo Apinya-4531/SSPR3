@@ -157,6 +157,26 @@ const formatCurrency = (n) => (Number(n) || 0).toLocaleString("th-TH", { minimum
 // Work orders carry their closing costs as a list of { label, amount } rows
 // (labor, outside contractor, transport, etc.) — this totals one such list.
 const sumCosts = (costs) => (costs || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+// Builds the HTML closing script tag without ever writing that literal run
+// of characters in this file's own source: this module itself lives inside
+// a script tag (see the build pipeline), and that exact substring anywhere
+// in here — even inside a JS string — would prematurely close it to an
+// HTML parser.
+const SCRIPT_END_TAG = "<" + "/script>";
+// Triggers a browser download of in-memory text content as a file, used for
+// the Dashboard's standalone HTML export (and reusable for any future
+// plain-text/HTML export that doesn't go through the xlsx library).
+function downloadTextFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime || "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 const genId = (prefix, list) => {
     const existing = new Set(list.map((x) => x.id));
     let n = list.length + 1;
@@ -442,6 +462,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .badge-neutral { background: var(--status-neutral-bg); color: var(--status-neutral); }
 
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.toolbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
 .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-steel); border-radius: 6px; padding: 8px 10px; flex: 1; min-width: 180px; max-width: 320px; }
 .search-box input { background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13.5px; width: 100%; font-family: inherit; }
 .search-box svg { color: var(--text-tertiary); flex-shrink: 0; }
@@ -1123,6 +1144,196 @@ function Topbar({ title, sub, user, theme, onToggleTheme }) {
 /* ------------------------------------------------------------------------ */
 const PIE_COLORS = { NORMAL: "var(--status-good)", MAINT: "var(--status-warn)", DOWN: "var(--status-bad)" };
 const TYPE_COLORS = { PM: "var(--status-good)", CORRECTIVE: "var(--status-warn)", BREAKDOWN: "var(--status-bad)" };
+// Hex equivalents of the dark-theme CSS variables above, for the standalone
+// Dashboard export below — that file has no access to this app's :root
+// variables, so its colors are written out literally instead.
+const EXPORT_STATUS_HEX = { good: "#4CAF6D", warn: "#F0B429", bad: "#E5555A", neutral: "#9198A0" };
+const EXPORT_PIE_HEX = { NORMAL: EXPORT_STATUS_HEX.good, MAINT: EXPORT_STATUS_HEX.warn, DOWN: EXPORT_STATUS_HEX.bad };
+const EXPORT_TYPE_HEX = { PM: EXPORT_STATUS_HEX.good, CORRECTIVE: EXPORT_STATUS_HEX.warn, BREAKDOWN: EXPORT_STATUS_HEX.bad };
+const EXPORT_ACCENT_HEX = "#F5A623";
+function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+// Builds a single self-contained HTML file: the Dashboard's current figures,
+// baked in as data, rendered with Chart.js (loaded from a CDN) for hover
+// tooltips and a toggleable legend — so the person can download it and open
+// or share it as its own interactive report, independent of this app.
+function buildDashboardExportHtml(payload) {
+    const { meta, kpis, assetDist, woByPriority, repairFrequency, woTypeDist, upcomingPM, recentWO } = payload;
+    const kpiCardsHtml = kpis
+        .map((k) => `<div class="kpi-card" style="border-left-color:${k.color}"><div class="kpi-value">${escapeHtml(k.value)}</div><div class="kpi-label">${escapeHtml(k.label)}</div></div>`)
+        .join("");
+    const pmRowsHtml = upcomingPM.length === 0
+        ? `<div class="empty">ไม่มีแผนบำรุงรักษา</div>`
+        : upcomingPM
+            .map((p) => `<div class="list-row"><div><div class="row-title">${escapeHtml(p.taskName)}</div><div class="row-sub">${escapeHtml(p.assetName)}</div></div><div class="badge badge-${p.tone}">${escapeHtml(p.nextDueLabel)}</div></div>`)
+            .join("");
+    const woRowsHtml = recentWO.length === 0
+        ? `<div class="empty">ยังไม่มีใบสั่งซ่อม</div>`
+        : recentWO
+            .map((w) => `<div class="list-row"><div><div class="row-title">${escapeHtml(w.title)}</div><div class="row-sub">${escapeHtml(w.assetName)}</div></div><div style="text-align:right"><div class="badge badge-${w.tone}">${escapeHtml(w.statusLabel)}</div><div class="row-sub" style="margin-top:4px">${escapeHtml(w.createdDateLabel)}</div></div></div>`)
+            .join("");
+    const assetLegendHtml = assetDist
+        .map((d) => `<span class="legend-item"><span class="legend-dot" style="background:${d.color}"></span>${escapeHtml(d.name)} (${d.value})</span>`)
+        .join("");
+    const woTypeLegendHtml = woTypeDist
+        .map((d) => `<div class="list-row"><div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="legend-dot" style="background:${d.color}"></span>${escapeHtml(d.name)}</div><span class="mono row-sub">${d.value} รายการ (${d.pct}%)</span></div>`)
+        .join("");
+    const hasRepairData = repairFrequency.length > 0;
+    const hasTypeData = woTypeDist.some((d) => d.value > 0);
+    // Escaping "<" keeps this JSON blob from ever being able to break out of
+    // the <script> tag it's embedded in below, however stray the underlying
+    // asset or work-order text turns out to be.
+    const dataJson = JSON.stringify({ assetDist, woByPriority, repairFrequency, woTypeDist }).replace(/</g, "\\u003c");
+    return `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(meta.title)}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+* { box-sizing: border-box; }
+body { margin:0; font-family:'IBM Plex Sans Thai','Segoe UI',sans-serif; background:#14171A; color:#ECE9E2; padding:28px 32px 56px; }
+.header { margin-bottom:20px; }
+.header h1 { font-size:21px; margin:0 0 4px; font-family:'Chakra Petch',sans-serif; letter-spacing:.3px; }
+.header .sub { color:#9198A0; font-size:13.5px; }
+.header .meta { color:#5B6169; font-size:12px; margin-top:10px; }
+.kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px; }
+.kpi-card { background:#1E2226; border:1px solid #30363C; border-left:3px solid; border-radius:8px; padding:14px 16px; min-width:0; }
+.kpi-value { font-size:22px; font-weight:700; font-family:'JetBrains Mono',monospace; line-height:1.15; overflow-wrap:break-word; }
+.kpi-label { font-size:12px; color:#9198A0; margin-top:4px; }
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+.panel { background:#1E2226; border:1px solid #30363C; border-radius:8px; padding:16px; }
+.panel-title { font-size:14px; font-weight:600; margin-bottom:12px; }
+.chart-box { width:100%; height:230px; position:relative; }
+.legend-row { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:10px; font-size:12.5px; color:#9198A0; }
+.legend-item { display:inline-flex; align-items:center; }
+.legend-dot { width:8px; height:8px; border-radius:4px; display:inline-block; margin-right:6px; flex-shrink:0; }
+.list-row { display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid #30363C; gap:10px; }
+.list-row:last-child { border-bottom:none; }
+.row-title { font-size:13.5px; color:#ECE9E2; }
+.row-sub { font-size:12px; color:#9198A0; margin-top:2px; }
+.badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+.badge-good { background:rgba(76,175,109,0.14); color:#4CAF6D; }
+.badge-warn { background:rgba(240,180,41,0.14); color:#F0B429; }
+.badge-bad { background:rgba(229,85,90,0.14); color:#E5555A; }
+.badge-neutral { background:rgba(145,152,160,0.14); color:#9198A0; }
+.mono { font-family:'JetBrains Mono',monospace; }
+.empty { text-align:center; color:#5B6169; font-size:13px; padding:26px 0; }
+.footer-note { text-align:center; color:#5B6169; font-size:11.5px; margin-top:28px; }
+@media (max-width:860px) { .kpi-row { grid-template-columns:repeat(2,1fr); } .grid-2 { grid-template-columns:1fr; } }
+@media (max-width:520px) { .kpi-row { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="header">
+<h1>${escapeHtml(meta.title)}</h1>
+<div class="sub">ภาพรวมสถานะอุปกรณ์และงานซ่อมบำรุงทั้งหมด</div>
+<div class="meta">สร้างเมื่อ ${escapeHtml(meta.generatedAt)} · ข้อมูล: ${escapeHtml(meta.yearLabel)}</div>
+</div>
+
+<div class="kpi-row">${kpiCardsHtml}</div>
+
+<div class="grid-2">
+<div class="panel">
+<div class="panel-title">สถานะอุปกรณ์ทั้งหมด</div>
+<div class="chart-box"><canvas id="assetDistChart"></canvas></div>
+<div class="legend-row">${assetLegendHtml}</div>
+</div>
+<div class="panel">
+<div class="panel-title">ใบสั่งซ่อมที่ยังไม่ปิดงาน แยกตามความสำคัญ</div>
+<div class="chart-box" style="height:258px"><canvas id="priorityChart"></canvas></div>
+</div>
+</div>
+
+<div class="grid-2">
+<div class="panel">
+<div class="panel-title">แผน PM ที่ใกล้ถึงกำหนด</div>
+${pmRowsHtml}
+</div>
+<div class="panel">
+<div class="panel-title">ใบสั่งซ่อมล่าสุด</div>
+${woRowsHtml}
+</div>
+</div>
+
+<div class="grid-2">
+<div class="panel">
+<div class="panel-title">อุปกรณ์ที่มีการแจ้งซ่อมบ่อยที่สุด</div>
+${hasRepairData ? `<div class="chart-box" style="height:258px"><canvas id="repairChart"></canvas></div>` : `<div class="empty">ยังไม่มีข้อมูลใบสั่งซ่อม</div>`}
+</div>
+<div class="panel">
+<div class="panel-title">สัดส่วนประเภทปัญหาที่แจ้งซ่อม</div>
+${hasTypeData ? `<div class="chart-box" style="height:190px"><canvas id="typeChart"></canvas></div>${woTypeLegendHtml}` : `<div class="empty">ยังไม่มีข้อมูลใบสั่งซ่อม</div>`}
+</div>
+</div>
+
+<div class="footer-note">ระบบซ่อมบำรุง และ คลังพัสดุ / TMT RAMA3</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js">${SCRIPT_END_TAG}
+<script>
+const DATA = ${dataJson};
+const ink = { text:"#ECE9E2", sub:"#9198A0", grid:"#30363C", panel:"#262B30", border:"#454C54" };
+if (window.Chart) {
+  Chart.defaults.color = ink.sub;
+  Chart.defaults.font.family = "'IBM Plex Sans Thai', sans-serif";
+  const tooltipStyle = { backgroundColor: ink.panel, titleColor: ink.text, bodyColor: ink.text, borderColor: ink.border, borderWidth: 1, padding: 10 };
+
+  new Chart(document.getElementById('assetDistChart'), {
+    type: 'doughnut',
+    data: { labels: DATA.assetDist.map((d) => d.name), datasets: [{ data: DATA.assetDist.map((d) => d.value), backgroundColor: DATA.assetDist.map((d) => d.color), borderWidth: 0 }] },
+    options: { cutout: '62%', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: tooltipStyle } }
+  });
+
+  new Chart(document.getElementById('priorityChart'), {
+    type: 'bar',
+    data: { labels: DATA.woByPriority.map((d) => d.name), datasets: [{ data: DATA.woByPriority.map((d) => d.value), backgroundColor: "${EXPORT_ACCENT_HEX}", borderRadius: 4, maxBarThickness: 46 }] },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: tooltipStyle },
+      scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: ink.grid } } }
+    }
+  });
+
+  const repairEl = document.getElementById('repairChart');
+  if (repairEl) {
+    new Chart(repairEl, {
+      type: 'bar',
+      data: { labels: DATA.repairFrequency.map((d) => d.name), datasets: [{ data: DATA.repairFrequency.map((d) => d.count), backgroundColor: "${EXPORT_ACCENT_HEX}", borderRadius: 4 }] },
+      options: {
+        indexAxis: 'y',
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, tooltipStyle, {
+            callbacks: {
+              label: (ctx) => {
+                const d = DATA.repairFrequency[ctx.dataIndex];
+                const cost = d.cost > 0 ? (' · ค่าใช้จ่ายรวม ' + d.cost.toLocaleString('th-TH') + ' บาท') : '';
+                return d.count + ' ครั้ง (' + d.pct + '%)' + cost;
+              }
+            }
+          })
+        },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: ink.grid } }, y: { grid: { display: false } } }
+      }
+    });
+  }
+
+  const typeEl = document.getElementById('typeChart');
+  if (typeEl) {
+    new Chart(typeEl, {
+      type: 'doughnut',
+      data: { labels: DATA.woTypeDist.map((d) => d.name), datasets: [{ data: DATA.woTypeDist.map((d) => d.value), backgroundColor: DATA.woTypeDist.map((d) => d.color), borderWidth: 0 }] },
+      options: { cutout: '55%', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: tooltipStyle } }
+    });
+  }
+}
+${SCRIPT_END_TAG}
+</body>
+</html>`;
+}
 function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }) {
     const [yearFilter, setYearFilter] = useState("");
     // Years are picked off each work order's createdDate (a plain Gregorian
@@ -1196,9 +1407,50 @@ function DashboardTab({ assets, pmSchedules, workOrders, spareParts, setActive }
             pct: Math.round(((counts[k] || 0) / total) * 100),
         }));
     }, [yearWO]);
+    // Bundles the figures already computed above into the standalone,
+    // Chart.js-powered HTML report built by buildDashboardExportHtml, then
+    // triggers its download.
+    const exportDashboard = () => {
+        const kpis = [
+            { label: "อุปกรณ์ทั้งหมดในระบบ", value: String(totalAssets), color: EXPORT_ACCENT_HEX },
+            { label: "ใบสั่งซ่อมที่ยังไม่เสร็จ", value: String(openWO), color: EXPORT_STATUS_HEX.warn },
+            { label: "แผน PM ที่เกินกำหนด", value: String(overduePM), color: EXPORT_STATUS_HEX.bad },
+            { label: "พัสดุใกล้หมด / หมดสต็อก", value: String(lowParts), color: EXPORT_STATUS_HEX.neutral },
+            { label: "ค่าใช้จ่ายบำรุงรักษาทั้งหมด", value: `${formatCurrency(totalCost)} บาท`, color: EXPORT_STATUS_HEX.good },
+        ];
+        const html = buildDashboardExportHtml({
+            meta: {
+                title: "แดชบอร์ด TMT RAMA3",
+                generatedAt: formatDateTime(new Date()),
+                yearLabel: yearFilter ? `ปี ${Number(yearFilter) + 543}` : "ทุกปี",
+            },
+            kpis,
+            assetDist: assetDist.map((d) => ({ name: d.name, value: d.value, color: EXPORT_PIE_HEX[d.key] })),
+            woByPriority,
+            repairFrequency,
+            woTypeDist: woTypeDist.map((d) => ({ name: d.name, value: d.value, pct: d.pct, color: EXPORT_TYPE_HEX[d.key] })),
+            upcomingPM: upcomingPM.map((p) => ({
+                taskName: p.taskName,
+                assetName: assetName(p.assetId),
+                nextDueLabel: formatDate(p.nextDue),
+                tone: toneMap.pm[pmStatusOf(p)],
+            })),
+            recentWO: recentWO.map((w) => ({
+                title: w.title,
+                assetName: assetName(w.assetId),
+                statusLabel: WO_STATUS[w.status],
+                createdDateLabel: formatDate(w.createdDate),
+                tone: toneMap.wo[w.status],
+            })),
+        });
+        downloadTextFile(`แดชบอร์ด_${today()}.html`, html, "text/html;charset=utf-8");
+    };
     return (React.createElement("div", null,
         React.createElement("div", { className: "toolbar", style: { marginBottom: 14 } },
             React.createElement("div", { className: "spacer" }),
+            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportDashboard },
+                React.createElement(Download, { size: 14 }),
+                " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Dashboard (HTML)"),
             React.createElement("select", { className: "select-filter", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) },
                 React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E1B\u0E35"),
                 years.map((y) => React.createElement("option", { key: y, value: y },
@@ -2300,15 +2552,16 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
             subView === "history" && (React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportHistoryExcel, disabled: sortedTxns.length === 0 },
                 React.createElement(Download, { size: 14 }),
                 " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel")),
-            React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openIssue() },
-                React.createElement(ArrowUpCircle, { size: 14 }),
-                " \u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01"),
-            canEdit && React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openReceive() },
-                React.createElement(ArrowDownCircle, { size: 14 }),
-                " \u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
-            canEdit && subView === "items" && React.createElement("button", { className: "btn btn-primary btn-sm", onClick: openAdd },
-                React.createElement(Plus, { size: 14 }),
-                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E1E\u0E31\u0E2A\u0E14\u0E38")),
+            React.createElement("div", { className: "toolbar-actions" },
+                React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openIssue() },
+                    React.createElement(ArrowUpCircle, { size: 14 }),
+                    " \u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01"),
+                canEdit && React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openReceive() },
+                    React.createElement(ArrowDownCircle, { size: 14 }),
+                    " \u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
+                canEdit && subView === "items" && React.createElement("button", { className: "btn btn-primary btn-sm", onClick: openAdd },
+                    React.createElement(Plus, { size: 14 }),
+                    " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E1E\u0E31\u0E2A\u0E14\u0E38"))),
         subView === "items" ? (React.createElement("div", { className: "panel" }, filteredItems.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32" })) : (React.createElement("div", { className: "table-wrap" },
             React.createElement("table", { className: "data-table" },
                 React.createElement("thead", null,
