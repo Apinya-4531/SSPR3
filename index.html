@@ -661,7 +661,11 @@ function EmptyState({ text }) {
     return React.createElement("div", { className: "empty-state" }, text);
 }
 function Modal({ title, onClose, children, wide, footer }) {
-    return (React.createElement("div", { className: "modal-overlay", onClick: onClose },
+    // A modal with a footer is a form (add/edit/receive/issue…): clicking the
+    // dimmed area around it must NOT dismiss it, or half-typed data is lost.
+    // Those close only via ✕ or ยกเลิก. Footer-less modals are read-only views
+    // (details, image preview), where click-outside-to-close is harmless.
+    return (React.createElement("div", { className: "modal-overlay", onClick: footer ? undefined : onClose },
         React.createElement("div", { className: `modal-panel${wide ? " modal-wide" : ""}`, onClick: (e) => e.stopPropagation() },
             React.createElement("div", { className: "modal-header" },
                 React.createElement("h3", null, title),
@@ -2326,6 +2330,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     const [imagePreview, setImagePreview] = useState(null);
     const [txnEditModal, setTxnEditModal] = useState(null);
     const [txnEditForm, setTxnEditForm] = useState({});
+    const [codeError, setCodeError] = useState("");
     // Only admins and store staff may correct a past receive/issue record —
     // everyone else only gets to view and print the history.
     const canEditHistory = currentUser.role === "ADMIN" || currentUser.role === "STORE";
@@ -2371,12 +2376,27 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const matchC = !categoryFilter || p.category === categoryFilter;
         return matchQ && matchS && matchC;
     });
-    const openAdd = () => { setFormValues({ quantity: 0, minStock: 1 }); setModal({ mode: "add" }); };
-    const openEdit = (p) => { setFormValues(p); setModal({ mode: "edit", id: p.id }); };
+    const openAdd = () => { setFormValues({ quantity: 0, minStock: 1 }); setCodeError(""); setModal({ mode: "add" }); };
+    const openEdit = (p) => { setFormValues(p); setCodeError(""); setModal({ mode: "edit", id: p.id }); };
     const submitItem = () => {
         if (!formValues.name)
             return;
-        const record = { ...formValues, quantity: Number(formValues.quantity) || 0, minStock: Number(formValues.minStock) || 0, unitPrice: Number(formValues.unitPrice) || 0 };
+        // รหัสพัสดุ is optional, but when filled it must be unique across the
+        // whole store (compared ignoring case and surrounding spaces) — the item
+        // being edited is excluded so saving it unchanged isn't flagged.
+        const code = (formValues.code || "").trim();
+        if (code) {
+            const clash = spareParts.find((p) => (modal.mode === "add" || p.id !== modal.id) && (p.code || "").trim().toLowerCase() === code.toLowerCase());
+            if (clash) {
+                setCodeError(`รหัสพัสดุ "${code}" ถูกใช้แล้วกับ "${clash.name}" กรุณาใช้รหัสอื่น`);
+                // The error banner sits at the top of the (scrollable) form body.
+                const body = document.querySelector(".modal-body");
+                if (body)
+                    body.scrollTo({ top: 0, behavior: "smooth" });
+                return;
+            }
+        }
+        const record = { ...formValues, code, quantity: Number(formValues.quantity) || 0, minStock: Number(formValues.minStock) || 0, unitPrice: Number(formValues.unitPrice) || 0 };
         if (modal.mode === "add") {
             const id = genId("SP", spareParts);
             onItemsChange([...spareParts, { id, ...record }]);
@@ -2641,6 +2661,9 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                 React.createElement("button", { className: "btn btn-primary", onClick: submitItem },
                     React.createElement(Check, { size: 15 }),
                     " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")) },
+            codeError && (React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, padding: "10px 12px", borderRadius: 6, background: "var(--status-bad-bg)", border: "1px solid var(--status-bad)" } },
+                React.createElement(AlertTriangle, { size: 16, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                React.createElement("span", { style: { fontSize: 13, color: "var(--status-bad)" } }, codeError))),
             React.createElement("div", { className: "field field-wide", style: { marginBottom: 14 } },
                 React.createElement("label", null, "\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
                 React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
@@ -2653,7 +2676,8 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                             formValues.imageUrl ? "เปลี่ยนรูป" : "แนบรูปภาพ",
                             React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: (e) => handleImageFile(e.target.files[0]) })),
                         formValues.imageUrl && (React.createElement("button", { type: "button", className: "btn btn-ghost btn-sm", onClick: () => setFormValues({ ...formValues, imageUrl: "" }) }, "\u0E25\u0E1A\u0E23\u0E39\u0E1B"))))),
-            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => setFormValues({ ...formValues, [k]: v }) }))),
+            React.createElement(RecordForm, { fields: fields, values: formValues, onChange: (k, v) => { setFormValues({ ...formValues, [k]: v }); if (k === "code")
+                    setCodeError(""); } }))),
         receiveModal && (React.createElement(Modal, { title: "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32\u0E1E\u0E31\u0E2A\u0E14\u0E38", onClose: () => setReceiveModal(false), footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => setReceiveModal(false) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
                 React.createElement("button", { className: "btn btn-primary", onClick: submitReceive },
