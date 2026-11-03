@@ -449,6 +449,14 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .data-table th { text-align: left; color: var(--text-tertiary); font-weight: 600; font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border-steel); white-space: nowrap; }
 .data-table td { padding: 11px 12px; border-bottom: 1px solid var(--border-steel); vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
+/* Sticky column headers: the wrapper becomes its own height-limited scroll
+   area, and the header row pins to its top while the rows scroll beneath.
+   (A sticky header can't follow the page scroll here, because .table-wrap's
+   overflow-x:auto — needed for narrow screens — makes it the scroll
+   container.) The header's bottom line is drawn as an inset shadow because
+   a collapsed-table border would scroll away with the rows. */
+.table-wrap-sticky { max-height: max(360px, calc(100vh - 270px)); overflow: auto; }
+.table-wrap-sticky .data-table th { position: sticky; top: 0; z-index: 2; background: var(--bg-panel); border-bottom: none; box-shadow: inset 0 -1px 0 var(--border-steel); }
 .data-table tr:hover td { background: var(--bg-panel-raised); }
 .row-clickable { cursor: pointer; }
 .cell-primary { font-weight: 600; color: var(--text-primary); }
@@ -2584,7 +2592,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
             subView === "history" && (React.createElement("button", { className: "btn btn-outline btn-sm", onClick: exportHistoryExcel, disabled: sortedTxns.length === 0 },
                 React.createElement(Download, { size: 14 }),
                 " \u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14 Excel"))),
-        subView === "items" ? (React.createElement("div", { className: "panel" }, filteredItems.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32" })) : (React.createElement("div", { className: "table-wrap" },
+        subView === "items" ? (React.createElement("div", { className: "panel" }, filteredItems.length === 0 ? (React.createElement(EmptyState, { text: "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32" })) : (React.createElement("div", { className: "table-wrap table-wrap-sticky" },
             React.createElement("table", { className: "data-table" },
                 React.createElement("thead", null,
                     React.createElement("tr", null,
@@ -2624,7 +2632,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                             canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
                                 React.createElement(Edit2, { size: 14 })),
                             canEdit && React.createElement("button", { className: "icon-btn", onClick: () => removeItem(p.id) },
-                                React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E1E\u0E31\u0E2A\u0E14\u0E38" })) : (React.createElement("div", { className: "table-wrap" },
+                                React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E1E\u0E31\u0E2A\u0E14\u0E38" })) : (React.createElement("div", { className: "table-wrap table-wrap-sticky" },
             React.createElement("table", { className: "data-table" },
                 React.createElement("thead", null,
                     React.createElement("tr", null,
