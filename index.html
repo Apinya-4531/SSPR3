@@ -54,7 +54,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 // the exact same build so they share one internal registry, or getFirestore()
 // throws "Service firestore is not available".
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // Firebase config is set in the small <script> block near the top of this
 // HTML file (window.__FIREBASE_CONFIG__) — edit it there, not here, so it
 // stays easy to find.
@@ -325,9 +325,64 @@ function useFirestoreCollection(key, seedFn) {
         setData(next);
         setDoc(doc(db, "cmms", key), { items: next }).catch((e) => {
             console.error(`บันทึกข้อมูล "${key}" ไปยัง Firestore ไม่สำเร็จ:`, e);
+            reportSaveError(`บันทึกข้อมูลไม่สำเร็จ (${key}) — การเปลี่ยนแปลงล่าสุดอาจไม่ถูกเก็บไว้ ${e && e.code ? "[" + e.code + "]" : ""}`);
         });
     };
     return [data, update, loading];
+}
+// Failed saves used to be logged to the console only, so a rejected write
+// (e.g. a document over Firestore's 1 MB limit) looked like it had worked
+// until the page was reloaded. Now any failed save also raises this event,
+// which App shows as a visible banner.
+function reportSaveError(message) {
+    try {
+        window.dispatchEvent(new CustomEvent("cmms-save-error", { detail: message }));
+    }
+    catch (e) { /* ignore */ }
+}
+// Part photos live in their own Firestore documents (cmms/img-<partId>), NOT
+// inside the spare-parts list document. That list is one document capped at
+// 1 MB, and embedded photos (~60 KB each) used up that whole budget after ~20
+// parts. Photos in separate documents leave the list tiny (hundreds of parts
+// fit) while each photo has a full document to itself.
+const IMG_PREFIX = "img-";
+function usePartImages() {
+    const [images, setImages] = useState({});
+    const [loaded, setLoaded] = useState(false);
+    useEffect(() => {
+        // Only documents whose id starts with "img-" (the other cmms/* documents
+        // are the big lists, which this listener must not download).
+        const q = query(collection(db, "cmms"), where(documentId(), ">=", IMG_PREFIX), where(documentId(), "<", IMG_PREFIX + "\uf8ff"));
+        const unsub = onSnapshot(q, (snap) => {
+            const next = {};
+            snap.forEach((d) => {
+                const url = d.data().imageUrl;
+                if (url)
+                    next[d.id.slice(IMG_PREFIX.length)] = url;
+            });
+            setImages(next);
+            setLoaded(true);
+        }, (err) => {
+            console.error("ไม่สามารถซิงก์รูปภาพพัสดุกับ Firestore:", err);
+            reportSaveError("โหลดรูปภาพพัสดุไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ");
+            setLoaded(true);
+        });
+        return () => unsub();
+    }, []);
+    // Both update the screen immediately and write to Firestore; the returned
+    // promise lets callers wait for the write before relying on it.
+    const saveImage = (partId, dataUrl) => {
+        setImages((m) => ({ ...m, [partId]: dataUrl }));
+        return setDoc(doc(db, "cmms", IMG_PREFIX + partId), { imageUrl: dataUrl });
+    };
+    const removeImage = (partId) => {
+        setImages((m) => {
+            const { [partId]: _gone, ...rest } = m;
+            return rest;
+        });
+        return deleteDoc(doc(db, "cmms", IMG_PREFIX + partId));
+    };
+    return [images, saveImage, removeImage, loaded];
 }
 /* ------------------------------------------------------------------------ */
 /* styling                                                                    */
@@ -394,6 +449,7 @@ const STYLE = `
 .cmms-root select:focus-visible,
 .cmms-root textarea:focus-visible { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
 
+.save-error-bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 300; max-width: min(640px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; background: var(--bg-panel); border: 1px solid var(--status-bad); color: var(--status-bad); font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar { width: 236px; flex-shrink: 0; background: var(--bg-panel); border-right: 1px solid var(--border-steel); display: flex; flex-direction: column; padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
@@ -2351,14 +2407,14 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         reader.onload = (ev) => {
             const img = new Image();
             img.onload = () => {
-                const maxW = 480;
+                const maxW = 360;
                 const scale = Math.min(1, maxW / img.width);
                 const canvas = document.createElement("canvas");
                 canvas.width = Math.round(img.width * scale);
                 canvas.height = Math.round(img.height * scale);
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
                 setFormValues((v) => ({ ...v, imageUrl: dataUrl }));
             };
             img.src = ev.target.result;
@@ -2374,6 +2430,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         { key: "unit", label: "หน่วยนับ", type: "select", options: UNIT_OPTIONS },
         { key: "location", label: "ตำแหน่งจัดเก็บ", type: "select", options: LOCATION_OPTIONS, wide: true },
         { key: "unitPrice", label: "ราคาต่อหน่วย (บาท)", type: "number" },
+        { key: "note", label: "หมายเหตุ", type: "textarea", wide: true },
     ];
     const statusLabel = { ok: "ปกติ", low: "ใกล้หมด", out: "หมดสต็อก" };
     const withStatus = spareParts.map((p) => ({ ...p, _status: partStatusOf(p) }));
@@ -2522,9 +2579,10 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
             "ราคาต่อหน่วย": Number(p.unitPrice || 0),
             "มูลค่ารวม": Number(p.unitPrice || 0) * Number(p.quantity || 0),
             "สถานะ": statusLabel[p._status],
+            "หมายเหตุ": p.note || "",
         }));
         const ws = XLSX.utils.json_to_sheet(rows);
-        ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+        ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "รายการพัสดุ");
         XLSX.writeFile(wb, `รายการพัสดุ_${today()}.xlsx`);
@@ -2881,9 +2939,70 @@ export default function App() {
     const [assets, updateAssets, assetsLoading] = useFirestoreCollection("assets", seedAssets);
     const [pmSchedules, updatePm, pmLoading] = useFirestoreCollection("pm-schedules", seedPmSchedules);
     const [workOrders, updateWo, woLoading] = useFirestoreCollection("work-orders", seedWorkOrders);
-    const [spareParts, updateParts, partsLoading] = useFirestoreCollection("spare-parts", seedSpareParts);
+    const [rawParts, updateRawParts, partsLoading] = useFirestoreCollection("spare-parts", seedSpareParts);
+    const [partImages, saveImage, removeImage, imagesLoaded] = usePartImages();
+    const [saveError, setSaveError] = useState("");
     const [stockTxns, updateStockTxns, txnsLoading] = useFirestoreCollection("stock-txns", seedStockTxns);
     const loading = usersLoading || assetsLoading || pmLoading || woLoading || partsLoading || txnsLoading;
+    // The rest of the app keeps seeing parts with an `imageUrl` field exactly as
+    // before: it's merged in here from the separate photo documents (falling back
+    // to a legacy embedded photo until it has been migrated out, below).
+    const spareParts = useMemo(() => rawParts.map((p) => { const img = partImages[p.id] || p.imageUrl; return img ? { ...p, imageUrl: img } : p; }), [rawParts, partImages]);
+    // Every save of the parts list goes through here: photos are split off into
+    // their own documents and the list itself is stored without them.
+    const updateParts = (next) => {
+        const writes = [];
+        const keep = new Set();
+        next.forEach((p) => {
+            keep.add(p.id);
+            const img = p.imageUrl || "";
+            const stored = partImages[p.id] || "";
+            if (img && img !== stored)
+                writes.push(saveImage(p.id, img));
+            else if (!img && stored)
+                writes.push(removeImage(p.id));
+        });
+        // A deleted part must not leave its photo behind: ids can be reused later.
+        spareParts.forEach((p) => { if (!keep.has(p.id) && partImages[p.id])
+            writes.push(removeImage(p.id)); });
+        const stripped = next.map(({ imageUrl, ...rest }) => rest);
+        if (writes.length === 0) {
+            updateRawParts(stripped);
+            return;
+        }
+        // Photos first: the list (which no longer carries them) is saved only once
+        // the photo documents are safely written.
+        Promise.all(writes)
+            .then(() => updateRawParts(stripped))
+            .catch((e) => {
+            console.error("บันทึกรูปภาพพัสดุไม่สำเร็จ:", e);
+            reportSaveError("บันทึกรูปภาพพัสดุไม่สำเร็จ ข้อมูลที่แก้ไขล่าสุดไม่ถูกบันทึก กรุณาลองใหม่");
+        });
+    };
+    // One-time move of photos still embedded in the parts list (how every photo
+    // was stored before) into their own documents. Order matters so nothing can
+    // be lost: write all photo documents, and only after they all succeed save
+    // the list without the embedded copies.
+    const migratedRef = useRef(false);
+    useEffect(() => {
+        if (partsLoading || !imagesLoaded || migratedRef.current)
+            return;
+        const legacy = rawParts.filter((p) => p.imageUrl);
+        if (legacy.length === 0)
+            return;
+        migratedRef.current = true;
+        Promise.all(legacy.filter((p) => !partImages[p.id]).map((p) => saveImage(p.id, p.imageUrl)))
+            .then(() => updateRawParts(rawParts.map(({ imageUrl, ...rest }) => rest)))
+            .catch((e) => {
+            console.error("ย้ายรูปภาพพัสดุไม่สำเร็จ:", e);
+            reportSaveError("ย้ายรูปภาพพัสดุไปที่เก็บใหม่ไม่สำเร็จ ข้อมูลเดิมยังอยู่ครบ กรุณารีเฟรชหน้าเว็บเพื่อลองใหม่");
+        });
+    }, [partsLoading, imagesLoaded, rawParts, partImages]);
+    useEffect(() => {
+        const onErr = (e) => setSaveError(String((e && e.detail) || "บันทึกข้อมูลไม่สำเร็จ"));
+        window.addEventListener("cmms-save-error", onErr);
+        return () => window.removeEventListener("cmms-save-error", onErr);
+    }, []);
     const [currentUser, setCurrentUser] = useState(null);
     const [activeTab, setActiveTab] = useState("dashboard");
     const [printDoc, setPrintDoc] = useState(null);
@@ -2943,6 +3062,11 @@ export default function App() {
     const [title, sub] = titles[page] || ["ไม่มีสิทธิ์เข้าถึง", "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานหน้าใดในระบบ"];
     return (React.createElement("div", { className: "cmms-root", "data-theme": theme },
         React.createElement("style", null, STYLE),
+        saveError && (React.createElement("div", { className: "save-error-bar", role: "alert" },
+            React.createElement(AlertTriangle, { size: 16, style: { flexShrink: 0 } }),
+            React.createElement("span", null, saveError),
+            React.createElement("button", { className: "icon-btn", onClick: () => setSaveError(""), title: "\u0E1B\u0E34\u0E14" },
+                React.createElement(X, { size: 14 })))),
         React.createElement("div", { className: "app-shell" },
             React.createElement(Sidebar, { active: page, setActive: setActiveTab, role: role, isAdmin: isAdmin, onLogout: () => setCurrentUser(null) }),
             React.createElement("div", { className: "main" },
