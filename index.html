@@ -2460,10 +2460,13 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     // Same for storage locations: the built-in list plus every location already
     // saved on a part, so nothing entered earlier ever drops out of the choices.
     const locationOptions = [...LOCATION_OPTIONS, ...[...new Set(spareParts.map((p) => (p.location || "").trim()).filter(Boolean))].filter((l) => !LOCATION_OPTIONS.includes(l))];
+    // And categories: built-ins plus every category already saved on a part. Used by
+    // both the add/edit form and the toolbar filter so a new category can be filtered.
+    const categoryOptions = [...PART_CATEGORIES, ...[...new Set(spareParts.map((p) => (p.category || "").trim()).filter(Boolean))].filter((c) => !PART_CATEGORIES.includes(c))];
     const fields = [
         { key: "name", label: "ชื่อพัสดุ", type: "text", required: true, wide: true },
         { key: "code", label: "รหัสพัสดุ", type: "text" },
-        { key: "category", label: "หมวดหมู่", type: "select", options: PART_CATEGORIES },
+        { key: "category", label: "หมวดหมู่", type: "combo", options: categoryOptions, placeholder: "เลือก หรือพิมพ์หมวดหมู่ใหม่...", customLabel: "เพิ่มหมวดหมู่ใหม่" },
         { key: "quantity", label: "จำนวนคงเหลือ", type: "number", required: true },
         { key: "minStock", label: "จุดสั่งซื้อขั้นต่ำ", type: "number" },
         { key: "unit", label: "หน่วยนับ", type: "combo", options: unitOptions, placeholder: "เลือก หรือพิมพ์หน่วยใหม่...", customLabel: "เพิ่มหน่วยใหม่" },
@@ -2477,7 +2480,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const q = query.toLowerCase();
         const matchQ = !query || p.name.toLowerCase().includes(q) || (p.code || "").toLowerCase().includes(q);
         const matchS = !statusFilter || p._status === statusFilter;
-        const matchC = !categoryFilter || p.category === categoryFilter;
+        const matchC = !categoryFilter || (p.category || "").trim() === categoryFilter;
         return matchQ && matchS && matchC;
     });
     const openAdd = () => { setFormValues({ quantity: 0, minStock: 1 }); setCodeError(""); setModal({ mode: "add" }); };
@@ -2663,7 +2666,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("option", { value: "out" }, "\u0E2B\u0E21\u0E14\u0E2A\u0E15\u0E47\u0E2D\u0E01")),
                 React.createElement("select", { className: "select-filter", value: categoryFilter, onChange: (e) => setCategoryFilter(e.target.value) },
                     React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
-                    PART_CATEGORIES.map((c) => React.createElement("option", { key: c, value: c }, c))))) : (React.createElement(React.Fragment, null,
+                    categoryOptions.map((c) => React.createElement("option", { key: c, value: c }, c))))) : (React.createElement(React.Fragment, null,
                 React.createElement("select", { className: "select-filter", value: txnFilter, onChange: (e) => setTxnFilter(e.target.value) },
                     React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
                     React.createElement("option", { value: "RECEIVE" }, "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
