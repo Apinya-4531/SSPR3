@@ -2394,6 +2394,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     const [imagePreview, setImagePreview] = useState(null);
     const [txnEditModal, setTxnEditModal] = useState(null);
     const [txnEditForm, setTxnEditForm] = useState({});
+    const [txnDeleteModal, setTxnDeleteModal] = useState(null);
     const [codeError, setCodeError] = useState("");
     // Only admins and store staff may correct a past receive/issue record —
     // everyone else only gets to view and print the history.
@@ -2720,7 +2721,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                                 React.createElement(Edit2, { size: 14 })),
                             React.createElement("button", { className: "icon-btn", title: "\u0E1E\u0E34\u0E21\u0E1E\u0E4C", onClick: () => onPrint(t.type === "RECEIVE" ? "receive" : "issue", t) },
                                 React.createElement(Printer, { size: 14 })),
-                            canDeleteHistory && React.createElement("button", { className: "icon-btn", title: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClick: () => deleteTxn(t) },
+                            canDeleteHistory && React.createElement("button", { className: "icon-btn", title: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClick: () => setTxnDeleteModal(t) },
                                 React.createElement(Trash2, { size: 14 }))))))))))))),
         modal && (React.createElement(Modal, { title: modal.mode === "add" ? "เพิ่มพัสดุใหม่" : "แก้ไขข้อมูลพัสดุ", onClose: () => setModal(null), footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => setModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
@@ -2813,6 +2814,60 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("textarea", { rows: 2, value: issueForm.note || "", onChange: (e) => setIssueForm({ ...issueForm, note: e.target.value }) }))))),
         imagePreview && (React.createElement(Modal, { title: imagePreview.name, onClose: () => setImagePreview(null) },
             React.createElement("img", { src: imagePreview.imageUrl, alt: imagePreview.name, style: { width: "100%", borderRadius: 8, display: "block" } }))),
+        txnDeleteModal && (() => {
+            const t = txnDeleteModal;
+            const item = spareParts.find((p) => p.id === t.itemId);
+            const qty = Number(t.qty || 0);
+            const isReceive = t.type === "RECEIVE";
+            const before = item ? Number(item.quantity) : null;
+            const after = item ? Math.max(0, before + (isReceive ? -qty : qty)) : null;
+            return (React.createElement(Modal, { title: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E32\u0E23\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", onClose: () => setTxnDeleteModal(null), footer: React.createElement(React.Fragment, null,
+                    React.createElement("button", { className: "btn btn-outline", onClick: () => setTxnDeleteModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                    React.createElement("button", { className: "btn btn-danger", onClick: () => { deleteTxn(t); setTxnDeleteModal(null); } },
+                        React.createElement(Trash2, { size: 14 }),
+                        " \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E25\u0E1A")) },
+                React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 14 } },
+                    React.createElement(AlertTriangle, { size: 20, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                    React.createElement("div", { style: { fontSize: 14 } },
+                        "\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23",
+                        TXN_TYPE[t.type],
+                        "\u0E19\u0E35\u0E49\u0E43\u0E0A\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48? \u0E01\u0E32\u0E23\u0E25\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E14\u0E49")),
+                React.createElement("div", { className: "detail-grid", style: { marginBottom: 14 } },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48"),
+                        React.createElement("div", { className: "v mono" }, t.id)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
+                        React.createElement("div", { className: "v" }, TXN_TYPE[t.type])),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23"),
+                        React.createElement("div", { className: "v" }, t.itemName)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E08\u0E33\u0E19\u0E27\u0E19"),
+                        React.createElement("div", { className: "v" },
+                            qty,
+                            " ",
+                            t.unit)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"),
+                        React.createElement("div", { className: "v" }, formatDate(t.date)))),
+                item && (React.createElement("div", { style: { fontSize: 13, color: "var(--text-secondary)" } },
+                    "\u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30",
+                    isReceive ? "หัก" : "คืน",
+                    "\u0E08\u0E33\u0E19\u0E27\u0E19 ",
+                    qty,
+                    " ",
+                    t.unit,
+                    " ",
+                    isReceive ? "ออกจาก" : "เข้า",
+                    "\u0E2A\u0E15\u0E47\u0E2D\u0E01\u0E02\u0E2D\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E19\u0E35\u0E49\u0E14\u0E49\u0E27\u0E22 (\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ",
+                    before,
+                    " \u2192 ",
+                    after,
+                    " ",
+                    item.unit || t.unit,
+                    ")"))));
+        })(),
         txnEditModal && (React.createElement(Modal, { title: `แก้ไขรายการ${TXN_TYPE[txnEditModal.type]} — ${txnEditModal.id}`, onClose: () => setTxnEditModal(null), footer: React.createElement(React.Fragment, null,
                 React.createElement("button", { className: "btn btn-outline", onClick: () => setTxnEditModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
                 React.createElement("button", { className: "btn btn-primary", onClick: submitTxnEdit },
