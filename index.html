@@ -2427,6 +2427,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     const [txnEditModal, setTxnEditModal] = useState(null);
     const [txnEditForm, setTxnEditForm] = useState({});
     const [txnDeleteModal, setTxnDeleteModal] = useState(null);
+    const [itemDeleteModal, setItemDeleteModal] = useState(null);
     const [codeError, setCodeError] = useState("");
     // Only admins and store staff may correct a past receive/issue record —
     // everyone else only gets to view and print the history.
@@ -2731,7 +2732,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                                 React.createElement(ArrowDownCircle, { size: 14 })),
                             canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
                                 React.createElement(Edit2, { size: 14 })),
-                            canEdit && React.createElement("button", { className: "icon-btn", onClick: () => removeItem(p.id) },
+                            canEdit && React.createElement("button", { className: "icon-btn", title: "\u0E25\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38", onClick: () => setItemDeleteModal(p) },
                                 React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E1E\u0E31\u0E2A\u0E14\u0E38" })) : (React.createElement("div", { className: "table-wrap table-wrap-sticky" },
             React.createElement("table", { className: "data-table" },
                 React.createElement("thead", null,
@@ -2855,6 +2856,44 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("textarea", { rows: 2, value: issueForm.note || "", onChange: (e) => setIssueForm({ ...issueForm, note: e.target.value }) }))))),
         imagePreview && (React.createElement(Modal, { title: imagePreview.name, onClose: () => setImagePreview(null) },
             React.createElement("img", { src: imagePreview.imageUrl, alt: imagePreview.name, style: { width: "100%", borderRadius: 8, display: "block" } }))),
+        itemDeleteModal && (() => {
+            const p = itemDeleteModal;
+            const txnCount = stockTxns.filter((t) => t.itemId === p.id).length;
+            return (React.createElement(Modal, { title: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E32\u0E23\u0E25\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38", onClose: () => setItemDeleteModal(null), footer: React.createElement(React.Fragment, null,
+                    React.createElement("button", { className: "btn btn-outline", onClick: () => setItemDeleteModal(null) }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"),
+                    React.createElement("button", { className: "btn btn-danger", onClick: () => { removeItem(p.id); setItemDeleteModal(null); } },
+                        React.createElement(Trash2, { size: 14 }),
+                        " \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E25\u0E1A")) },
+                React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 14 } },
+                    React.createElement(AlertTriangle, { size: 20, color: "var(--status-bad)", style: { flexShrink: 0, marginTop: 1 } }),
+                    React.createElement("div", { style: { fontSize: 14 } }, "\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E19\u0E35\u0E49\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E04\u0E25\u0E31\u0E07\u0E43\u0E0A\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48? \u0E01\u0E32\u0E23\u0E25\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E14\u0E49")),
+                React.createElement("div", { className: "detail-grid", style: { marginBottom: 14 } },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A"),
+                        React.createElement("div", { className: "v mono" }, p.id)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("div", { className: "v" }, p.code || "-")),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E0A\u0E37\u0E48\u0E2D\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
+                        React.createElement("div", { className: "v" }, p.name)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
+                        React.createElement("div", { className: "v" }, p.category || "-")),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D"),
+                        React.createElement("div", { className: "v" },
+                            p.quantity,
+                            " ",
+                            p.unit)),
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "k" }, "\u0E17\u0E35\u0E48\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A"),
+                        React.createElement("div", { className: "v" }, p.location || "-"))),
+                txnCount > 0 && (React.createElement("div", { style: { fontSize: 13, color: "var(--text-secondary)" } },
+                    "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E19\u0E35\u0E49\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32-\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01 ",
+                    txnCount,
+                    " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E40\u0E2B\u0E25\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19\u0E08\u0E30\u0E22\u0E31\u0E07\u0E04\u0E07\u0E2D\u0E22\u0E39\u0E48"))));
+        })(),
         txnDeleteModal && (() => {
             const t = txnDeleteModal;
             const item = spareParts.find((p) => p.id === t.itemId);
