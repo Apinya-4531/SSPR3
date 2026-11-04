@@ -742,11 +742,21 @@ function Modal({ title, onClose, children, wide, footer }) {
 /* searchable combobox (custom-rendered so it never depends on the           */
 /* browser's native <option> list styling)                                   */
 /* ------------------------------------------------------------------------ */
-function SearchSelect({ value, onChange, options, getValue, getLabel, placeholder, emptyLabel }) {
+// With allowCustom, the person can also type a value that isn't in the list:
+// it's offered as an "add new" row, kept if they press Enter, and kept if they
+// click away or on Save without picking anything (so typed text isn't lost).
+// The value is then stored as-is, and `options` is expected to be extended by
+// the caller with values already in use so new entries show up next time.
+function SearchSelect({ value, onChange, options, getValue, getLabel, placeholder, emptyLabel, allowCustom, customLabel }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [rect, setRect] = useState(null);
     const wrapRef = useRef(null);
+    // The outside-click listener below is registered once, so it reads the
+    // latest typed text / callback through refs rather than stale closures.
+    const latest = useRef({});
+    latest.current = { query, onChange, allowCustom, options, getLabel, getValue };
+    const getValueOf = (o) => latest.current.getValue(o);
     useEffect(() => {
         if (!open)
             return undefined;
@@ -769,6 +779,12 @@ function SearchSelect({ value, onChange, options, getValue, getLabel, placeholde
             const insideTrigger = wrapRef.current && wrapRef.current.contains(e.target);
             const insidePortal = e.target.closest && e.target.closest(".search-select-portal");
             if (!insideTrigger && !insidePortal) {
+                const l = latest.current;
+                const typed = (l.query || "").trim();
+                if (l.allowCustom && typed) {
+                    const same = l.options.find((o) => l.getLabel(o).toLowerCase() === typed.toLowerCase());
+                    l.onChange(same !== undefined ? getValueOf(same) : typed);
+                }
                 setOpen(false);
                 setQuery("");
             }
@@ -777,6 +793,10 @@ function SearchSelect({ value, onChange, options, getValue, getLabel, placeholde
         return () => document.removeEventListener("mousedown", handleClick);
     }, []);
     const selected = options.find((o) => getValue(o) === value);
+    // A custom value that isn't (yet) in the list still has to show as selected.
+    const customShown = allowCustom && !selected && value ? value : "";
+    const typedNew = query.trim();
+    const canAddTyped = allowCustom && typedNew && !options.some((o) => getLabel(o).toLowerCase() === typedNew.toLowerCase());
     const filtered = query.trim()
         ? options.filter((o) => getLabel(o).toLowerCase().includes(query.trim().toLowerCase()))
         : options;
@@ -787,11 +807,23 @@ function SearchSelect({ value, onChange, options, getValue, getLabel, placeholde
     };
     return (React.createElement("div", { className: "search-select", ref: wrapRef },
         React.createElement("div", { className: "search-select-control", onClick: () => setOpen((o) => !o) },
-            open ? (React.createElement("input", { autoFocus: true, type: "text", value: query, placeholder: selected ? getLabel(selected) : (placeholder || "พิมพ์เพื่อค้นหา..."), onChange: (e) => setQuery(e.target.value) })) : (React.createElement("span", { className: selected ? "" : "placeholder" }, selected ? getLabel(selected) : (placeholder || "เลือก..."))),
+            open ? (React.createElement("input", { autoFocus: true, type: "text", value: query, placeholder: selected ? getLabel(selected) : (customShown || placeholder || "พิมพ์เพื่อค้นหา..."), onChange: (e) => setQuery(e.target.value), onKeyDown: (e) => {
+                    if (e.key === "Enter" && allowCustom && typedNew) {
+                        e.preventDefault();
+                        const same = options.find((o) => getLabel(o).toLowerCase() === typedNew.toLowerCase());
+                        pick(same !== undefined ? getValue(same) : typedNew);
+                    }
+                } })) : (React.createElement("span", { className: selected || customShown ? "" : "placeholder" }, selected ? getLabel(selected) : (customShown || placeholder || "เลือก..."))),
             React.createElement(ChevronDown, { size: 14 })),
         open && rect && (React.createElement("div", { className: "search-select-list search-select-portal", style: { position: "fixed", top: rect.top, left: rect.left, width: rect.width } },
             emptyLabel && (React.createElement("div", { className: "search-select-option", onClick: () => pick("") }, emptyLabel)),
-            filtered.length === 0 ? (React.createElement("div", { className: "search-select-empty" }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32")) : (filtered.map((o) => (React.createElement("div", { key: getValue(o), className: `search-select-option${getValue(o) === value ? " active" : ""}`, onClick: () => pick(getValue(o)) }, getLabel(o)))))))));
+            canAddTyped && (React.createElement("div", { className: "search-select-option", onClick: () => pick(typedNew) },
+                "+ ",
+                customLabel || "เพิ่มรายการใหม่",
+                ": \"",
+                typedNew,
+                "\"")),
+            filtered.length === 0 ? (canAddTyped ? null : React.createElement("div", { className: "search-select-empty" }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E49\u0E19\u0E2B\u0E32")) : (filtered.map((o) => (React.createElement("div", { key: getValue(o), className: `search-select-option${getValue(o) === value ? " active" : ""}`, onClick: () => pick(getValue(o)) }, getLabel(o)))))))));
 }
 function RecordForm({ fields, values, onChange }) {
     return (React.createElement("div", { className: "form-grid" }, fields.map((f) => (React.createElement("div", { className: `field${f.wide ? " field-wide" : ""}`, key: f.key },
@@ -799,7 +831,7 @@ function RecordForm({ fields, values, onChange }) {
             f.label,
             f.required && React.createElement("span", { className: "req" }, "*")),
         f.hint && React.createElement("div", { className: "field-hint" }, f.hint),
-        f.type === "select" ? (React.createElement("select", { value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) },
+        f.type === "combo" ? (React.createElement(SearchSelect, { value: values[f.key] ?? "", onChange: (v) => onChange(f.key, v), options: f.options, getValue: (o) => o, getLabel: (o) => o, placeholder: f.placeholder || "เลือกหรือพิมพ์เพิ่มใหม่...", allowCustom: true, customLabel: f.customLabel })) : f.type === "select" ? (React.createElement("select", { value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) },
             React.createElement("option", { value: "", disabled: true }, "\u0E40\u0E25\u0E37\u0E2D\u0E01..."),
             f.options.map((opt) => (React.createElement("option", { key: opt, value: opt }, f.optionLabels ? f.optionLabels[opt] : opt))))) : f.type === "textarea" ? (React.createElement("textarea", { rows: 3, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })) : f.type === "list" ? (React.createElement(ListField, { items: values[f.key] && values[f.key].length > 0 ? values[f.key] : [""], placeholder: f.itemPlaceholder, addLabel: f.addLabel || "เพิ่มรายการ", onChange: (next) => onChange(f.key, next) })) : (React.createElement("input", { type: f.type, value: values[f.key] ?? "", onChange: (e) => onChange(f.key, e.target.value) })))))));
 }
@@ -2422,14 +2454,20 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         };
         reader.readAsDataURL(file);
     };
+    // The built-in units plus any unit already typed in on some part, so a unit
+    // added once is offered in the list from then on.
+    const unitOptions = [...UNIT_OPTIONS, ...[...new Set(spareParts.map((p) => (p.unit || "").trim()).filter(Boolean))].filter((u) => !UNIT_OPTIONS.includes(u))];
+    // Same for storage locations: the built-in list plus every location already
+    // saved on a part, so nothing entered earlier ever drops out of the choices.
+    const locationOptions = [...LOCATION_OPTIONS, ...[...new Set(spareParts.map((p) => (p.location || "").trim()).filter(Boolean))].filter((l) => !LOCATION_OPTIONS.includes(l))];
     const fields = [
         { key: "name", label: "ชื่อพัสดุ", type: "text", required: true, wide: true },
         { key: "code", label: "รหัสพัสดุ", type: "text" },
         { key: "category", label: "หมวดหมู่", type: "select", options: PART_CATEGORIES },
         { key: "quantity", label: "จำนวนคงเหลือ", type: "number", required: true },
         { key: "minStock", label: "จุดสั่งซื้อขั้นต่ำ", type: "number" },
-        { key: "unit", label: "หน่วยนับ", type: "select", options: UNIT_OPTIONS },
-        { key: "location", label: "ตำแหน่งจัดเก็บ", type: "select", options: LOCATION_OPTIONS, wide: true },
+        { key: "unit", label: "หน่วยนับ", type: "combo", options: unitOptions, placeholder: "เลือก หรือพิมพ์หน่วยใหม่...", customLabel: "เพิ่มหน่วยใหม่" },
+        { key: "location", label: "ตำแหน่งจัดเก็บ", type: "combo", options: locationOptions, wide: true, placeholder: "เลือก หรือพิมพ์ตำแหน่งใหม่...", customLabel: "เพิ่มตำแหน่งใหม่" },
         { key: "unitPrice", label: "ราคาต่อหน่วย (บาท)", type: "number" },
         { key: "note", label: "หมายเหตุ", type: "textarea", wide: true },
     ];
