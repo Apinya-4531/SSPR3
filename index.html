@@ -912,6 +912,14 @@ function InfoItem({ icon: Icon, label, value, wide }) {
             React.createElement("div", { className: "k" }, label),
             React.createElement("div", { className: "v" }, value))));
 }
+// The code a person sees for a part: the รหัสพัสดุ they entered (as shown in the
+// inventory table), falling back to the internal id for parts without one or
+// that have since been deleted. Records only store the internal id, so printed
+// documents look the code up here instead of printing the id.
+function partCodeOf(spareParts, partId) {
+    const part = (spareParts || []).find((sp) => sp.id === partId);
+    return part ? (part.code || part.id) : partId;
+}
 function WoPrint({ data, assets, spareParts, printedAt }) {
     const asset = assets.find((a) => a.id === data.assetId);
     return (React.createElement("div", { className: "print-paper" },
@@ -943,7 +951,7 @@ function WoPrint({ data, assets, spareParts, printedAt }) {
                             const part = spareParts.find((sp) => sp.id === pu.partId);
                             return (React.createElement("tr", { key: i },
                                 React.createElement("td", null, i + 1),
-                                React.createElement("td", { className: "mono" }, pu.partId),
+                                React.createElement("td", { className: "mono" }, part ? (part.code || part.id) : pu.partId),
                                 React.createElement("td", null, part ? part.name : pu.partId),
                                 React.createElement("td", null,
                                     pu.qty,
@@ -979,7 +987,7 @@ function WoPrint({ data, assets, spareParts, printedAt }) {
                 React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A\u0E07\u0E32\u0E19"),
                 React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
 }
-function ReceivePrint({ data, printedAt }) {
+function ReceivePrint({ data, spareParts, printedAt }) {
     return (React.createElement("div", { className: "print-paper print-a5" },
         React.createElement("style", null, "@page { size: A5 landscape; margin: 8mm; }"),
         React.createElement("div", { className: "print-a5-body" },
@@ -999,7 +1007,7 @@ function ReceivePrint({ data, printedAt }) {
                 React.createElement("tbody", null,
                     React.createElement("tr", null,
                         React.createElement("td", null, "1"),
-                        React.createElement("td", { className: "mono" }, data.itemId),
+                        React.createElement("td", { className: "mono" }, partCodeOf(spareParts, data.itemId)),
                         React.createElement("td", null, data.itemName),
                         React.createElement("td", null,
                             data.qty,
@@ -1018,7 +1026,7 @@ function ReceivePrint({ data, printedAt }) {
                 React.createElement("div", { className: "print-sign-line" }, "\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A"),
                 React.createElement("div", { className: "print-sign-date" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ___/___/___")))));
 }
-function IssuePrint({ data, printedAt }) {
+function IssuePrint({ data, spareParts, printedAt }) {
     return (React.createElement("div", { className: "print-paper print-a5" },
         React.createElement("style", null, "@page { size: A5 landscape; margin: 8mm; }"),
         React.createElement("div", { className: "print-a5-body" },
@@ -1039,7 +1047,7 @@ function IssuePrint({ data, printedAt }) {
                 React.createElement("tbody", null,
                     React.createElement("tr", null,
                         React.createElement("td", null, "1"),
-                        React.createElement("td", { className: "mono" }, data.itemId),
+                        React.createElement("td", { className: "mono" }, partCodeOf(spareParts, data.itemId)),
                         React.createElement("td", null, data.itemName),
                         React.createElement("td", null,
                             data.qty,
@@ -1116,9 +1124,9 @@ function PrintDocument({ type, data, assets, spareParts, printedAt }) {
     if (type === "wo")
         return React.createElement(WoPrint, { data: data, assets: assets, spareParts: spareParts, printedAt: printedAt });
     if (type === "receive")
-        return React.createElement(ReceivePrint, { data: data, printedAt: printedAt });
+        return React.createElement(ReceivePrint, { data: data, spareParts: spareParts, printedAt: printedAt });
     if (type === "issue")
-        return React.createElement(IssuePrint, { data: data, printedAt: printedAt });
+        return React.createElement(IssuePrint, { data: data, spareParts: spareParts, printedAt: printedAt });
     if (type === "asset-history")
         return React.createElement(AssetHistoryPrint, { data: data, printedAt: printedAt });
     return null;
@@ -2903,11 +2911,8 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("div", { style: { fontSize: 14 } }, "\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E19\u0E35\u0E49\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E04\u0E25\u0E31\u0E07\u0E43\u0E0A\u0E48\u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48? \u0E01\u0E32\u0E23\u0E25\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E49\u0E2D\u0E19\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E14\u0E49")),
                 React.createElement("div", { className: "detail-grid", style: { marginBottom: 14 } },
                     React.createElement("div", null,
-                        React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A"),
-                        React.createElement("div", { className: "v mono" }, p.id)),
-                    React.createElement("div", null,
                         React.createElement("div", { className: "k" }, "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
-                        React.createElement("div", { className: "v" }, p.code || "-")),
+                        React.createElement("div", { className: "v mono" }, p.code || p.id)),
                     React.createElement("div", null,
                         React.createElement("div", { className: "k" }, "\u0E0A\u0E37\u0E48\u0E2D\u0E1E\u0E31\u0E2A\u0E14\u0E38"),
                         React.createElement("div", { className: "v" }, p.name)),
