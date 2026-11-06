@@ -2457,6 +2457,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
     const [query, setQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("");
+    const [txnQuery, setTxnQuery] = useState("");
     const [txnFilter, setTxnFilter] = useState("");
     const [monthFilter, setMonthFilter] = useState("");
     const [modal, setModal] = useState(null);
@@ -2647,7 +2648,14 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         onItemsChange(spareParts.map((p) => p.id === t.itemId ? { ...p, quantity: Math.max(0, Number(p.quantity) + direction * Number(t.qty || 0)) } : p));
         onTxnsChange(stockTxns.filter((x) => x.id !== t.id));
     };
+    // Search the history by document number, part name or part code, who handled
+    // it, department, usage place, reference and note.
+    const txnSearch = txnQuery.trim().toLowerCase();
+    const matchesTxnSearch = (t) => !txnSearch ||
+        [t.id, t.itemName, partCodeOf(spareParts, t.itemId), t.person, t.receivedBy, t.recordedBy, t.department, t.usageType, t.usageLocation, t.reference, t.note]
+            .some((v) => String(v || "").toLowerCase().includes(txnSearch));
     const sortedTxns = [...stockTxns]
+        .filter(matchesTxnSearch)
         .filter((t) => !txnFilter || t.type === txnFilter)
         .filter((t) => !monthFilter || (t.date || "").slice(0, 7) === monthFilter)
         .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2710,6 +2718,9 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                 React.createElement("select", { className: "select-filter", value: categoryFilter, onChange: (e) => setCategoryFilter(e.target.value) },
                     React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
                     categoryOptions.map((c) => React.createElement("option", { key: c, value: c }, c))))) : (React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "search-box" },
+                    React.createElement(Search, { size: 15 }),
+                    React.createElement("input", { placeholder: "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48, \u0E0A\u0E37\u0E48\u0E2D \u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E31\u0E2A\u0E14\u0E38", value: txnQuery, onChange: (e) => setTxnQuery(e.target.value) })),
                 React.createElement("select", { className: "select-filter", value: txnFilter, onChange: (e) => setTxnFilter(e.target.value) },
                     React.createElement("option", { value: "" }, "\u0E17\u0E38\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17"),
                     React.createElement("option", { value: "RECEIVE" }, "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
@@ -2775,7 +2786,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                             canEdit && React.createElement("button", { className: "icon-btn", onClick: () => openEdit(p) },
                                 React.createElement(Edit2, { size: 14 })),
                             canEdit && React.createElement("button", { className: "icon-btn", title: "\u0E25\u0E1A\u0E1E\u0E31\u0E2A\u0E14\u0E38", onClick: () => setItemDeleteModal(p) },
-                                React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1B\u0E23\u0E30\u0E27\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E1E\u0E31\u0E2A\u0E14\u0E38" })) : (React.createElement("div", { className: "table-wrap table-wrap-sticky" },
+                                React.createElement(Trash2, { size: 14 }))))))))))))) : (React.createElement("div", { className: "panel" }, sortedTxns.length === 0 ? (React.createElement(EmptyState, { text: stockTxns.length === 0 ? "ยังไม่มีประวัติการเคลื่อนไหวพัสดุ" : "ไม่พบรายการที่ค้นหา" })) : (React.createElement("div", { className: "table-wrap table-wrap-sticky" },
             React.createElement("table", { className: "data-table" },
                 React.createElement("thead", null,
                     React.createElement("tr", null,
