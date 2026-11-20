@@ -46,7 +46,7 @@
 // ---------------------------------------------------------------------------
 import React, { useState, useEffect, useMemo, useRef } from "https://esm.sh/react@18.3.1";
 import ReactDOM from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
-import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Warehouse, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, Menu, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
+import { LayoutDashboard, Factory, CalendarClock, Wrench, Package, Users as UsersIcon, Warehouse, Plus, Search, X, Check, LogOut, Edit2, Trash2, ChevronRight, MessageSquare, Printer, ArrowUpCircle, ArrowDownCircle, ImagePlus, Image as ImageIcon, User, Calendar, Tag, MapPin, Briefcase, Truck, Download, AlertTriangle, ChevronDown, Lock, Eye, EyeOff, Sun, Moon, Menu, RefreshCw, } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
 // Firebase itself is loaded from Google's own official CDN build (not esm.sh) —
@@ -54,7 +54,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 // the exact same build so they share one internal registry, or getFirestore()
 // throws "Service firestore is not available".
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { initializeFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, doc, setDoc, deleteDoc, onSnapshot, getDocFromServer, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // Firebase config is set in the small <script> block near the top of this
 // HTML file (window.__FIREBASE_CONFIG__) — edit it there, not here, so it
 // stays easy to find.
@@ -349,7 +349,15 @@ function useFirestoreCollection(key, seedFn) {
             fail(e);
         }
     };
-    return [data, update, loading];
+    // Manual "pull the latest from the server" (used by the refresh button). The
+    // realtime listener normally keeps data current by itself; this reads the
+    // document straight from the server as a fallback if it ever falls behind.
+    const refresh = async () => {
+        const snap = await getDocFromServer(doc(db, "cmms", key));
+        if (snap.exists())
+            setData(snap.data().items || []);
+    };
+    return [data, update, loading, refresh];
 }
 // Failed saves used to be logged to the console only, so a rejected write
 // (e.g. a document over Firestore's 1 MB limit) looked like it had worked
@@ -470,6 +478,10 @@ const STYLE = `
 .cmms-root select:focus-visible,
 .cmms-root textarea:focus-visible { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
+.refresh-note { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.refresh-note.bad { color: var(--status-bad); }
 .save-error-bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 300; max-width: min(640px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; background: var(--bg-panel); border: 1px solid var(--status-bad); color: var(--status-bad); font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar { width: 236px; flex-shrink: 0; background: var(--bg-panel); border-right: 1px solid var(--border-steel); display: flex; flex-direction: column; padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
@@ -2473,12 +2485,14 @@ function WorkOrdersTab({ workOrders, assets, users, spareParts, stockTxns, canMa
 /* ------------------------------------------------------------------------ */
 /* inventory (items + receive/issue ledger)                                   */
 /* ------------------------------------------------------------------------ */
-function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChange, onTxnsAdd, onTxnsChange, onPrint }) {
+function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChange, onTxnsAdd, onTxnsChange, onRefresh, onPrint }) {
     const [subView, setSubView] = useState("items");
     const [query, setQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("");
     const [txnQuery, setTxnQuery] = useState("");
+    const [refreshing, setRefreshing] = useState(false);
+    const [refreshInfo, setRefreshInfo] = useState(null);
     const [txnFilter, setTxnFilter] = useState("");
     const [monthFilter, setMonthFilter] = useState("");
     const [modal, setModal] = useState(null);
@@ -2669,6 +2683,23 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         onItemsChange(spareParts.map((p) => p.id === t.itemId ? { ...p, quantity: Math.max(0, Number(p.quantity) + direction * Number(t.qty || 0)) } : p));
         onTxnsChange(stockTxns.filter((x) => x.id !== t.id));
     };
+    // Re-read the history (and the parts list it refers to) straight from the
+    // server, and say when that last happened.
+    const doRefresh = async () => {
+        if (refreshing)
+            return;
+        setRefreshing(true);
+        try {
+            await onRefresh();
+            const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+            setRefreshInfo({ ok: true, text: `อัปเดตล่าสุด ${time}` });
+        }
+        catch (e) {
+            console.error("รีเฟรชข้อมูลประวัติไม่สำเร็จ:", e);
+            setRefreshInfo({ ok: false, text: "รีเฟรชไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง" });
+        }
+        setRefreshing(false);
+    };
     // Search the history by document number, part name or part code, who handled
     // it, department, usage place, reference and note.
     const txnSearch = txnQuery.trim().toLowerCase();
@@ -2747,7 +2778,11 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
                     React.createElement("option", { value: "RECEIVE" }, "\u0E23\u0E31\u0E1A\u0E40\u0E02\u0E49\u0E32"),
                     React.createElement("option", { value: "ISSUE" }, "\u0E40\u0E1A\u0E34\u0E01\u0E2D\u0E2D\u0E01")),
                 React.createElement("input", { type: "month", className: "select-filter", value: monthFilter, onChange: (e) => setMonthFilter(e.target.value) }),
-                monthFilter && React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setMonthFilter("") }, "\u0E25\u0E49\u0E32\u0E07\u0E40\u0E14\u0E37\u0E2D\u0E19"))),
+                monthFilter && React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setMonthFilter("") }, "\u0E25\u0E49\u0E32\u0E07\u0E40\u0E14\u0E37\u0E2D\u0E19"),
+                React.createElement("button", { className: "btn btn-outline btn-sm", onClick: doRefresh, disabled: refreshing, title: "\u0E14\u0E36\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E40\u0E0B\u0E34\u0E23\u0E4C\u0E1F\u0E40\u0E27\u0E2D\u0E23\u0E4C" },
+                    React.createElement(RefreshCw, { size: 14, className: refreshing ? "spin" : "" }),
+                    " \u0E23\u0E35\u0E40\u0E1F\u0E23\u0E0A"),
+                refreshInfo && React.createElement("span", { className: `refresh-note${refreshInfo.ok ? "" : " bad"}` }, refreshInfo.text))),
             React.createElement("div", { className: "spacer" }),
             React.createElement("div", { className: "toolbar-actions" },
                 React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => openIssue() },
@@ -3151,10 +3186,10 @@ export default function App() {
     const [assets, updateAssets, assetsLoading] = useFirestoreCollection("assets", seedAssets);
     const [pmSchedules, updatePm, pmLoading] = useFirestoreCollection("pm-schedules", seedPmSchedules);
     const [workOrders, updateWo, woLoading] = useFirestoreCollection("work-orders", seedWorkOrders);
-    const [rawParts, updateRawParts, partsLoading] = useFirestoreCollection("spare-parts", seedSpareParts);
+    const [rawParts, updateRawParts, partsLoading, refreshParts] = useFirestoreCollection("spare-parts", seedSpareParts);
     const [partImages, saveImage, removeImage, imagesLoaded] = usePartImages();
     const [saveError, setSaveError] = useState("");
-    const [stockTxns, updateStockTxns, txnsLoading] = useFirestoreCollection("stock-txns", seedStockTxns);
+    const [stockTxns, updateStockTxns, txnsLoading, refreshTxns] = useFirestoreCollection("stock-txns", seedStockTxns);
     const loading = usersLoading || assetsLoading || pmLoading || woLoading || partsLoading || txnsLoading;
     // The rest of the app keeps seeing parts with an `imageUrl` field exactly as
     // before: it's merged in here from the separate photo documents (falling back
@@ -3288,7 +3323,7 @@ export default function App() {
                     page === "assets" && (React.createElement(AssetsTab, { assets: assets, pmSchedules: pmSchedules, workOrders: workOrders, canEdit: true, onChange: updateAssets, onPmChange: updatePm, onWoChange: updateWo, onPrint: openPrint })),
                     page === "pm" && (React.createElement(PmTab, { pmSchedules: pmSchedules, assets: assets, users: users, canEdit: true, onChange: updatePm, onLogWorkOrder: logWorkOrder, currentUser: currentUser })),
                     page === "workorders" && (React.createElement(WorkOrdersTab, { workOrders: workOrders, assets: assets, users: users, spareParts: spareParts, stockTxns: stockTxns, canManage: true, currentUser: currentUser, onChange: updateWo, onPartsChange: updateParts, onTxnsChange: updateStockTxns, onPrint: openPrint })),
-                    page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onTxnsChange: updateStockTxns, onPrint: openPrint })),
+                    page === "parts" && (React.createElement(InventoryTab, { spareParts: spareParts, stockTxns: stockTxns, canEdit: true, currentUser: currentUser, onItemsChange: updateParts, onTxnsAdd: addStockTxns, onTxnsChange: updateStockTxns, onRefresh: () => Promise.all([refreshTxns(), refreshParts()]), onPrint: openPrint })),
                     page === "users" && isAdmin && (React.createElement(UsersTab, { users: users, onChange: updateUsers })),
                     !page && (React.createElement(EmptyState, { text: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E43\u0E14\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E34\u0E14\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A" }))))),
         printDoc && (React.createElement(PrintableModal, { onClose: () => setPrintDoc(null) },
