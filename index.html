@@ -54,12 +54,18 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 // the exact same build so they share one internal registry, or getFirestore()
 // throws "Service firestore is not available".
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // Firebase config is set in the small <script> block near the top of this
 // HTML file (window.__FIREBASE_CONFIG__) — edit it there, not here, so it
 // stays easy to find.
 const firebaseApp = initializeApp(window.__FIREBASE_CONFIG__);
-const db = getFirestore(firebaseApp);
+// Force long polling instead of the default streaming connection. Streaming
+// (WebChannel over HTTP/3 "QUIC") gets cut by some networks, browsers and
+// proxies after a short idle period (the browser logs
+// ERR_QUIC_PROTOCOL_ERROR.QUIC_NETWORK_IDLE_TIMEOUT); the realtime listener then
+// stalls and other people's changes don't show up until a manual refresh. Long
+// polling works everywhere, at the cost of a little more traffic.
+const db = initializeFirestore(firebaseApp, { experimentalForceLongPolling: true });
 /* ------------------------------------------------------------------------ */
 /* constants                                                                 */
 /* ------------------------------------------------------------------------ */
