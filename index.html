@@ -65,7 +65,11 @@ const firebaseApp = initializeApp(window.__FIREBASE_CONFIG__);
 // ERR_QUIC_PROTOCOL_ERROR.QUIC_NETWORK_IDLE_TIMEOUT); the realtime listener then
 // stalls and other people's changes don't show up until a manual refresh. Long
 // polling works everywhere, at the cost of a little more traffic.
-const db = initializeFirestore(firebaseApp, { experimentalForceLongPolling: true });
+// ignoreUndefinedProperties: a record with an undefined field (for example a
+// part saved without a unit, then issued) is saved without that field instead
+// of making Firestore throw "Unsupported field value: undefined" and drop the
+// whole save.
+const db = initializeFirestore(firebaseApp, { experimentalForceLongPolling: true, ignoreUndefinedProperties: true });
 /* ------------------------------------------------------------------------ */
 /* constants                                                                 */
 /* ------------------------------------------------------------------------ */
@@ -329,10 +333,21 @@ function useFirestoreCollection(key, seedFn) {
     }, [key]);
     const update = (next) => {
         setData(next);
-        setDoc(doc(db, "cmms", key), { items: next }).catch((e) => {
+        const fail = (e) => {
             console.error(`บันทึกข้อมูล "${key}" ไปยัง Firestore ไม่สำเร็จ:`, e);
             reportSaveError(`บันทึกข้อมูลไม่สำเร็จ (${key}) — การเปลี่ยนแปลงล่าสุดอาจไม่ถูกเก็บไว้ ${e && e.code ? "[" + e.code + "]" : ""}`);
-        });
+        };
+        // setDoc() rejects invalid data (e.g. an undefined field) by THROWING
+        // synchronously, before it returns a promise — so .catch() alone never saw
+        // it, the exception escaped into the caller (aborting the rest of the save,
+        // such as closing the form and opening the print slip) and nothing was
+        // reported. Catch both kinds of failure.
+        try {
+            setDoc(doc(db, "cmms", key), { items: next }).catch(fail);
+        }
+        catch (e) {
+            fail(e);
+        }
     };
     return [data, update, loading];
 }
@@ -2575,7 +2590,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const qty = Number(receiveForm.qty);
         onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Number(p.quantity) + qty } : p)));
         const txn = {
-            id: genId("RCV", stockTxns.filter((t) => t.type === "RECEIVE")), type: "RECEIVE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            id: genId("RCV", stockTxns.filter((t) => t.type === "RECEIVE")), type: "RECEIVE", itemId: item.id, itemName: item.name, qty, unit: item.unit || "",
             unitPrice: Number(item.unitPrice) || 0,
             date: receiveForm.date || today(), reference: receiveForm.reference, person: receiveForm.person,
             receivedBy: currentUser.name, note: receiveForm.note,
@@ -2595,7 +2610,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const qty = Number(issueForm.qty);
         onItemsChange(spareParts.map((p) => (p.id === item.id ? { ...p, quantity: Math.max(0, Number(p.quantity) - qty) } : p)));
         const txn = {
-            id: genId("OUT", stockTxns.filter((t) => t.type === "ISSUE")), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit,
+            id: genId("OUT", stockTxns.filter((t) => t.type === "ISSUE")), type: "ISSUE", itemId: item.id, itemName: item.name, qty, unit: item.unit || "",
             unitPrice: Number(item.unitPrice) || 0,
             date: issueForm.date || today(), reference: issueForm.reference, person: issueForm.person,
             department: issueForm.department, usageType: issueForm.usageType, usageLocation: issueForm.usageLocation,
@@ -2627,7 +2642,7 @@ function InventoryTab({ spareParts, stockTxns, canEdit, currentUser, onItemsChan
         const updatedTxn = {
             ...original,
             qty: newQty,
-            unit: txnEditForm.unit || original.unit,
+            unit: txnEditForm.unit || original.unit || "",
             unitPrice: Number(txnEditForm.unitPrice) || 0,
             date: txnEditForm.date || original.date,
             reference: txnEditForm.reference || "",
